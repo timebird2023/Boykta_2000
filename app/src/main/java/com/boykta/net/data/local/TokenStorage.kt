@@ -1,0 +1,86 @@
+package com.boykta.net.data.local
+
+import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.*
+import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
+import java.io.IOException
+
+private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "boykta_prefs")
+
+class TokenStorage(private val context: Context) {
+
+    companion object {
+        private val KEY_ACCESS_TOKEN   = stringPreferencesKey("access_token")
+        private val KEY_MSISDN         = stringPreferencesKey("msisdn")
+        private val KEY_PHONE_DISPLAY  = stringPreferencesKey("phone_display")
+        private val KEY_ACCOUNT_NAME   = stringPreferencesKey("account_name")
+        private val KEY_TOKEN_EXPIRY   = longPreferencesKey("token_expiry")
+        // multi-account: store JSON list
+        private val KEY_ACCOUNTS_JSON  = stringPreferencesKey("accounts_json")
+    }
+
+    val accessToken: Flow<String?> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { it[KEY_ACCESS_TOKEN] }
+
+    val msisdn: Flow<String?> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { it[KEY_MSISDN] }
+
+    val phoneDisplay: Flow<String?> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { it[KEY_PHONE_DISPLAY] }
+
+    val accountName: Flow<String?> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { it[KEY_ACCOUNT_NAME] }
+
+    val accountsJson: Flow<String?> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { it[KEY_ACCOUNTS_JSON] }
+
+    suspend fun saveToken(
+        accessToken: String,
+        msisdn: String,
+        phoneDisplay: String,
+        accountName: String,
+        expiresInSeconds: Long = 3600L
+    ) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_ACCESS_TOKEN]   = accessToken
+            prefs[KEY_MSISDN]         = msisdn
+            prefs[KEY_PHONE_DISPLAY]  = phoneDisplay
+            prefs[KEY_ACCOUNT_NAME]   = accountName
+            prefs[KEY_TOKEN_EXPIRY]   = System.currentTimeMillis() + expiresInSeconds * 1000
+        }
+    }
+
+    suspend fun clearToken() {
+        context.dataStore.edit { prefs ->
+            prefs.remove(KEY_ACCESS_TOKEN)
+            prefs.remove(KEY_MSISDN)
+            prefs.remove(KEY_PHONE_DISPLAY)
+            prefs.remove(KEY_ACCOUNT_NAME)
+            prefs.remove(KEY_TOKEN_EXPIRY)
+        }
+    }
+
+    /** Returns true if a token exists and has not expired. */
+    suspend fun isTokenValid(): Boolean {
+        var valid = false
+        context.dataStore.data.catch { emit(emptyPreferences()) }.collect { prefs ->
+            val token  = prefs[KEY_ACCESS_TOKEN]
+            val expiry = prefs[KEY_TOKEN_EXPIRY] ?: 0L
+            valid = !token.isNullOrBlank() && System.currentTimeMillis() < expiry
+        }
+        return valid
+    }
+
+    suspend fun saveAccountsJson(json: String) {
+        context.dataStore.edit { it[KEY_ACCOUNTS_JSON] = json }
+    }
+}
