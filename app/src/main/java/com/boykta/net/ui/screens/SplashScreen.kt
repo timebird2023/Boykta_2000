@@ -2,23 +2,25 @@ package com.boykta.net.ui.screens
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.boykta.net.R
 import com.boykta.net.data.local.TokenStorage
 import com.boykta.net.navigation.Screen
 import com.boykta.net.ui.theme.*
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.firstOrNull
 
 @Composable
 fun SplashScreen(navController: NavController) {
@@ -57,20 +59,14 @@ fun SplashScreen(navController: NavController) {
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.alpha(alpha)
         ) {
-            // Logo mark
-            Box(
+            // App icon
+            Image(
+                painter = painterResource(id = R.mipmap.ic_launcher),
+                contentDescription = "boykta net",
                 modifier = Modifier
-                    .size(80.dp)
-                    .background(SurfaceVariant, androidx.compose.foundation.shape.CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "bn",
-                    color = Primary,
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
+                    .size(100.dp)
+                    .clip(CircleShape)
+            )
             Spacer(Modifier.height(20.dp))
             Text(
                 text = "boykta net",

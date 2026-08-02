@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.io.IOException
 
@@ -71,13 +72,16 @@ class TokenStorage(private val context: Context) {
 
     /** Returns true if a token exists and has not expired. */
     suspend fun isTokenValid(): Boolean {
-        var valid = false
-        context.dataStore.data.catch { emit(emptyPreferences()) }.collect { prefs ->
+        return try {
+            val prefs = context.dataStore.data
+                .catch { emit(emptyPreferences()) }
+                .first()
             val token  = prefs[KEY_ACCESS_TOKEN]
             val expiry = prefs[KEY_TOKEN_EXPIRY] ?: 0L
-            valid = !token.isNullOrBlank() && System.currentTimeMillis() < expiry
+            !token.isNullOrBlank() && System.currentTimeMillis() < expiry
+        } catch (e: Exception) {
+            false
         }
-        return valid
     }
 
     suspend fun saveAccountsJson(json: String) {
