@@ -152,24 +152,8 @@ set -- \
         org.gradle.wrapper.GradleWrapperMain \
         "$@"
 
-# Stop when "xargs" is not available.
-if ! command -v xargs >/dev/null 2>&1
-then
-    die "xargs is not available"
-fi
-
-# Use "xargs" to parse quoted args.
-#
-# With -n1 it outputs one arg per line, with the quotes and backslashes removed.
-#
-# In Bash we could simply go:
-#
-#   readarray ARGS < <( xargs -n1 <<<"$var" ) &&
-#   set -- "${ARGS[@]}" "$@"
-#
-# but POSIX shell has neither arrays nor command substitution, so instead we
-# post-process each arg (as a line of input to sed) to backslash-escape any
-# temporary variable delimiters (the 'end' string) in the arg value, then
-# temporary-escape each '\'
-exec xargs -a <(echo "$DEFAULT_JVM_OPTS $JAVA_OPTS $GRADLE_OPTS" | tr '[:blank:]' '\n' | grep -v '^\s*$' | sed 's/[\\\\"]/\\&/g;/"\|'\''/{s/'\''\([^'\'']*\)'\''/\\\1/g;s/"\([^"]*\)"/\\\1/g;s/^/"/;s/$/"/}') -n1 \
-        $JAVACMD $@
+# Parse quoted JVM opts into an array and execute.
+# Using eval + bash array is reliable and avoids xargs escaping issues.
+eval "JVM_OPTS_ARRAY=($DEFAULT_JVM_OPTS)"
+# shellcheck disable=SC2086
+exec "$JAVACMD" "${JVM_OPTS_ARRAY[@]}" $JAVA_OPTS $GRADLE_OPTS "$@"
