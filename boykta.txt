@@ -1,0 +1,102 @@
+=========================================================
+FILE: boykta.txt
+DESCRIPTION: Djezzy API Endpoints & Payloads for boykta net (React Native)
+=========================================================
+
+--- GLOBAL HEADERS (MUST BE INCLUDED IN ALL REQUESTS) ---
+User-Agent: MobileApp/3.0.6
+Accept: application/json
+Accept-Language: fr
+Accept-Encoding: gzip
+Content-Type: application/json
+Authorization: Bearer {TOKEN}
+Host: apim.djezzy.dz
+
+=========================================================
+1. BALANCE & HISTORY SERVICES (الرصيد والسجلات)
+=========================================================
+
+[+] Main Balance (معرفة الرصيد الرئيسي)
+Method: GET
+URL: https://apim.djezzy.dz/mobile-api/api/v1/subscribers/main-balance/{SENDER_MSISDN}
+Response (200 OK):
+{
+  "message": "Balance retrieved successfully",
+  "status": 200,
+  "data": { "mainBalance": 52.18, "customerInformations": { ... } }
+}
+
+[+] Subscription History (سجل الاستهلاك والتفعيلات)
+Method: GET
+URL: https://apim.djezzy.dz/mobile-api/api/v1/subscribers/subscription-history/{SENDER_MSISDN}
+Response (200 OK):
+Returns an array of activated packages containing 'packageCode', 'packageFee', 'commercialName.ar', etc.
+
+=========================================================
+2. FLEXY SERVICES (تحويل الرصيد والإنترنت)
+=========================================================
+
+[+] Transfer Credit (إرسال رصيد - فليكسي)
+Method: POST
+URL: https://apim.djezzy.dz/mobile-api/api/v1/services/flexy/credit/{SENDER_MSISDN}
+Payload:
+{
+  "msisdnBParty": {TARGET_MSISDN},
+  "amount": {AMOUNT_NUMBER},
+  "password": "{PIN_CODE}"
+}
+Response Example (400 Bad Request - Wrong PIN):
+{"status":400,"message":{"ar":"الرقم السري غير صحيح. يرجى التحقق من الرقم السري والمحاولة مرة أخرى."}}
+
+[+] Flexy Credit History (سجل تحويلات الرصيد)
+Method: GET
+URL: https://apim.djezzy.dz/mobile-api/api/v1/services/flexy/history/{SENDER_MSISDN}?type=CREDIT_SHARE
+
+[+] Transfer Internet (إرسال جيجابايت)
+Method: POST
+URL: https://apim.djezzy.dz/mobile-api/api/v1/services/flexy/data/{SENDER_MSISDN}
+Payload:
+{
+  "msisdnBParty": {TARGET_MSISDN},
+  "packageCode": "TransferInternet1Go"
+}
+Response Example (201 Created):
+{"message":{"ar":"تمت العملية بنجاح."},"status":200,"data":null}
+
+[+] Flexy Data History (سجل تحويلات الإنترنت)
+Method: GET
+URL: https://apim.djezzy.dz/mobile-api/api/v1/services/flexy/history/{SENDER_MSISDN}?type=DATA_SHARE
+
+=========================================================
+3. FREE SMS SERVICES (الخدمات المجانية - رسائل)
+=========================================================
+
+[+] Send 'FlexyLi' SMS (رسالة فليكسيلي)
+Method: POST
+URL: https://apim.djezzy.dz/mobile-api/api/v1/customer-care/bip-sms/{SENDER_MSISDN}
+Payload:
+{
+  "msisdnReceiver": {TARGET_MSISDN},
+  "type": "FLEXYLI"
+}
+Response (201 Created):
+{"message":{"ar":"تم إرسال رسالتك بنجاح. من المفترض أن يستلمها المرسل إليه قريباً."},"status":200}
+
+[+] Send 'CallMe' SMS (رسالة كلمني)
+Method: POST
+URL: https://apim.djezzy.dz/mobile-api/api/v1/customer-care/bip-sms/{SENDER_MSISDN}
+Payload:
+{
+  "msisdnReceiver": {TARGET_MSISDN},
+  "type": "CALLME"
+}
+Response (201 Created):
+{"message":{"ar":"تم إرسال رسالتك بنجاح. من المفترض أن يستلمها المرسل إليه قريباً."},"status":200}
+
+=========================================================
+NOTES FOR REACT NATIVE DEVELOPER:
+- Replace {TOKEN} with the dynamically fetched Access Token.
+- Replace {SENDER_MSISDN} with the user's phone number format: 2137XXXXXXXX.
+- Replace {TARGET_MSISDN} with the receiver's phone number format: 2137XXXXXXXX.
+- For Error Handling: ALWAYS parse the response `message.ar` and display it in the custom Error Modal. Do not crash the app on 400/500 errors.
+=========================================================
