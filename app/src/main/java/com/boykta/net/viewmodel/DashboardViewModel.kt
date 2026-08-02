@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.boykta.net.data.api.ApiClient
 import com.boykta.net.data.local.TokenStorage
 import com.boykta.net.data.models.*
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -79,7 +80,3 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 }
-
-// Extension to enable async in viewModelScope
-private fun <T> kotlinx.coroutines.CoroutineScope.async(block: suspend () -> T) =
-    kotlinx.coroutines.async(kotlinx.coroutines.Dispatchers.IO) { block() }
