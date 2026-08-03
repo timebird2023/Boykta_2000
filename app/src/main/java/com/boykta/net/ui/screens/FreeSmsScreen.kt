@@ -4,7 +4,6 @@ import android.app.Activity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material3.*
@@ -22,6 +21,7 @@ import androidx.navigation.NavController
 import com.boykta.net.ads.AdsManager
 import com.boykta.net.data.api.ApiClient
 import com.boykta.net.data.local.TokenStorage
+import com.boykta.net.data.models.BipSmsBalanceData
 import com.boykta.net.data.models.BipSmsRequest
 import com.boykta.net.data.models.MgmInviteRequest
 import com.boykta.net.ui.components.ErrorModal
@@ -31,7 +31,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
-// ── Inline ViewModel for this screen ─────────────────────────────────────────
+// ── Inline ViewModel ─────────────────────────────────────────────────────────
 
 sealed class SmsUiState {
     object Idle     : SmsUiState()
@@ -47,18 +47,30 @@ class FreeSmsViewModel(application: android.app.Application) : AndroidViewModel(
     private val _state = MutableStateFlow<SmsUiState>(SmsUiState.Idle)
     val state: StateFlow<SmsUiState> = _state.asStateFlow()
 
+    private val _balance = MutableStateFlow<BipSmsBalanceData?>(null)
+    val balance: StateFlow<BipSmsBalanceData?> = _balance.asStateFlow()
+
     fun sendBip(phone: String, type: String) = callApi {
-        val msisdnB = toMsisdn(phone)
-        api.sendBipSms("Bearer $it", tokenStorage.msisdn.firstOrNull() ?: "", BipSmsRequest(msisdnB, type))
+        api.sendBipSms("Bearer $it", tokenStorage.msisdn.firstOrNull() ?: "", BipSmsRequest(toMsisdn(phone), type))
     }
 
     fun sendMgmInvite(phone: String) = callApi {
-        val msisdnB = toMsisdn(phone)
-        api.sendMgmInvitation("Bearer $it", tokenStorage.msisdn.firstOrNull() ?: "", MgmInviteRequest(msisdnB))
+        api.sendMgmInvitation("Bearer $it", tokenStorage.msisdn.firstOrNull() ?: "", MgmInviteRequest(toMsisdn(phone)))
     }
 
     fun activateMgmReward() = callApi {
         api.activateMgmReward("Bearer $it", tokenStorage.msisdn.firstOrNull() ?: "")
+    }
+
+    fun checkBipBalance() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val token  = tokenStorage.accessToken.firstOrNull() ?: return@launch
+            val msisdn = tokenStorage.msisdn.firstOrNull() ?: return@launch
+            try {
+                val resp = api.getBipSmsBalance("Bearer $token", msisdn)
+                if (resp.isSuccessful) _balance.value = resp.body()?.data
+            } catch (_: Exception) { }
+        }
     }
 
     private fun callApi(block: suspend (String) -> retrofit2.Response<*>) {
@@ -94,6 +106,7 @@ fun FreeSmsScreen(navController: NavController, vm: FreeSmsViewModel = viewModel
     val context  = LocalContext.current
     val activity = context as? Activity
     val uiState  by vm.state.collectAsState()
+    val balance  by vm.balance.collectAsState()
 
     var selectedTab  by remember { mutableIntStateOf(0) }
     var phone        by remember { mutableStateOf("") }
@@ -101,9 +114,12 @@ fun FreeSmsScreen(navController: NavController, vm: FreeSmsViewModel = viewModel
     var showError    by remember { mutableStateOf(false) }
     var errorMsg     by remember { mutableStateOf("") }
 
+    // Load balance on first open
+    LaunchedEffect(Unit) { vm.checkBipBalance() }
+
     LaunchedEffect(uiState) {
         when (val s = uiState) {
-            is SmsUiState.Success -> showSuccess = true
+            is SmsUiState.Success -> { showSuccess = true; vm.checkBipBalance() }
             is SmsUiState.Error   -> { errorMsg = s.message; showError = true }
             else -> {}
         }
@@ -128,14 +144,41 @@ fun FreeSmsScreen(navController: NavController, vm: FreeSmsViewModel = viewModel
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             TabRow(selectedTabIndex = selectedTab, containerColor = Background, contentColor = Primary) {
-                Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) { Text("كلمني / فليكسيلي", Modifier.padding(12.dp)) }
-                Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) { Text("دعوات MGM", Modifier.padding(12.dp)) }
+                Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
+                    Text("كلمني / فليكسيلي", Modifier.padding(12.dp))
+                }
+                Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
+                    Text("دعوات MGM", Modifier.padding(12.dp))
+                }
             }
 
             Column(
                 Modifier.fillMaxSize().padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+
+                // ── Bip-SMS balance chip ──────────────────────────────────
+                if (selectedTab == 0 && balance != null) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(SurfaceVariant, RoundedCornerShape(10.dp))
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            "كلمني المتبقية: ${balance!!.callMeRemaining ?: "--"}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary
+                        )
+                        Text(
+                            "فليكسيلي المتبقية: ${balance!!.flexyLiRemaining ?: "--"}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary
+                        )
+                    }
+                }
+
                 AppTextField(
                     value = phone, onValueChange = { phone = it },
                     label = "رقم المستلم", placeholder = "07XXXXXXXX",
@@ -169,11 +212,12 @@ fun FreeSmsScreen(navController: NavController, vm: FreeSmsViewModel = viewModel
                         colors = ButtonDefaults.buttonColors(containerColor = Primary, contentColor = OnPrimary),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        if (uiState is SmsUiState.Loading) CircularProgressIndicator(Modifier.size(20.dp), color = OnPrimary, strokeWidth = 2.dp)
+                        if (uiState is SmsUiState.Loading)
+                            CircularProgressIndicator(Modifier.size(20.dp), color = OnPrimary, strokeWidth = 2.dp)
                         else Text("إرسال دعوة", fontWeight = FontWeight.SemiBold)
                     }
 
-                    Divider(color = Border)
+                    HorizontalDivider(color = Border)
 
                     Button(
                         onClick = { vm.activateMgmReward() },

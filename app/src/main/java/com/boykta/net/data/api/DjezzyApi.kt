@@ -8,24 +8,48 @@ interface DjezzyApi {
 
     // ── Auth ─────────────────────────────────────────────────────────────────
 
-    /** Step 1 — request OTP (form-encoded) */
-    @FormUrlEncoded
+    /**
+     * Step 1 — request OTP.
+     * IMPORTANT: msisdn/client_id/scope are QUERY PARAMS (not form-encoded body).
+     * The JSON body is the consent agreement — always send it.
+     * Confirmed from Python bots: params={msisdn, client_id, scope}, json=body.
+     */
     @POST("oauth2/registration")
     suspend fun requestOtp(
-        @Field("msisdn")    msisdn: String,
-        @Field("client_id") clientId: String,
-        @Field("scope")     scope: String
+        @Query("msisdn")    msisdn: String,
+        @Query("client_id") clientId: String,
+        @Query("scope")     scope: String,
+        @Body body: OtpRegistrationBody
     ): Response<Void>
 
-    /** Step 2 — verify OTP and obtain access_token */
+    /**
+     * Step 2 — verify OTP and get access_token.
+     * IMPORTANT: field name is 'mobileNumber' (not 'msisdn'), and scope='djezzyAppV2'.
+     * Confirmed from Python: payload has mobileNumber + scope + client_id + client_secret + grant_type.
+     */
     @FormUrlEncoded
     @POST("oauth2/token")
     suspend fun verifyOtp(
         @Field("otp")           otp: String,
-        @Field("msisdn")        msisdn: String,
+        @Field("mobileNumber")  msisdn: String,
+        @Field("scope")         scope: String,
         @Field("client_id")     clientId: String,
         @Field("client_secret") clientSecret: String,
         @Field("grant_type")    grantType: String
+    ): Response<TokenResponse>
+
+    /**
+     * Refresh an expired access_token using the stored refresh_token.
+     * Confirmed from Python: grant_type=refresh_token, same endpoint as verifyOtp.
+     */
+    @FormUrlEncoded
+    @POST("oauth2/token")
+    suspend fun refreshToken(
+        @Field("grant_type")    grantType: String,
+        @Field("refresh_token") refreshToken: String,
+        @Field("client_id")     clientId: String,
+        @Field("client_secret") clientSecret: String,
+        @Field("scope")         scope: String
     ): Response<TokenResponse>
 
     // ── Balance ───────────────────────────────────────────────────────────────
@@ -36,11 +60,15 @@ interface DjezzyApi {
         @Path("msisdn") msisdn: String
     ): Response<ApiResponse<MainBalanceData>>
 
+    /**
+     * Returns nested: { data: { products: [ { commercialName, expiryAt, balances: [] } ] } }
+     * Old model (flat List<ProductBalance>) was wrong — use ConnectedProductsData wrapper.
+     */
     @GET("api/v1/subscribers/connected-products-balances/{msisdn}")
     suspend fun getProductBalances(
         @Header("Authorization") auth: String,
         @Path("msisdn") msisdn: String
-    ): Response<ApiResponse<List<ProductBalance>>>
+    ): Response<ApiResponse<ConnectedProductsData>>
 
     @GET("api/v1/subscribers/subscription-history/{msisdn}")
     suspend fun getSubscriptionHistory(
@@ -48,7 +76,7 @@ interface DjezzyApi {
         @Path("msisdn") msisdn: String
     ): Response<ApiResponse<List<SubscriptionHistoryItem>>>
 
-    // ── Activate offer (standard) ─────────────────────────────────────────────
+    // ── Activate offer ────────────────────────────────────────────────────────
 
     @POST("api/v1/subscribers/activate-product/{msisdn}")
     suspend fun activateProduct(
@@ -57,7 +85,7 @@ interface DjezzyApi {
         @Body body: ActivateProductRequest
     ): Response<ApiResponse<Any>>
 
-    /** Shake-type offers: GET first (checks eligibility), then POST */
+    /** Shake-type offers: GET to verify offer is available (data.code == packageCode), then POST. */
     @GET("api/v1/services/shake/{msisdn}")
     suspend fun checkShake(
         @Header("Authorization") auth: String,
@@ -103,6 +131,13 @@ interface DjezzyApi {
         @Body body: BipSmsRequest
     ): Response<ApiResponse<Any>>
 
+    /** Check remaining free bip-sms quota (callMeRemaining, flexyLiRemaining). */
+    @GET("api/v1/customer-care/bip-sms/{msisdn}")
+    suspend fun getBipSmsBalance(
+        @Header("Authorization") auth: String,
+        @Path("msisdn") msisdn: String
+    ): Response<ApiResponse<BipSmsBalanceData>>
+
     // ── MGM ───────────────────────────────────────────────────────────────────
 
     @POST("api/v1/services/mgm/send-invitation/{msisdn}")
@@ -116,6 +151,33 @@ interface DjezzyApi {
     suspend fun activateMgmReward(
         @Header("Authorization") auth: String,
         @Path("msisdn") msisdn: String
+    ): Response<ApiResponse<Any>>
+
+    // ── Network Services ─────────────────────────────────────────────────────
+    // serviceId: "APPELMASQUE" (hide caller ID) | "CALLWAIT" (call waiting)
+    // action:    "ACTIVATE" | "DEACTIVATE"
+
+    @POST("api/v1/services/network-services/{msisdn}/toggle")
+    suspend fun toggleNetworkService(
+        @Header("Authorization") auth: String,
+        @Path("msisdn") msisdn: String,
+        @Body body: NetworkServiceRequest
+    ): Response<ApiResponse<Any>>
+
+    // ── Ranati / RBT ring-back tone ───────────────────────────────────────────
+
+    @GET("content/api/v1/subscribers/{msisdn}")
+    suspend fun checkRanatiSubscription(
+        @Header("Authorization") auth: String,
+        @Path("msisdn") msisdn: String,
+        @Query("include") include: String = "rbt-subscriptions"
+    ): Response<ApiResponse<Any>>
+
+    @HTTP(method = "DELETE", path = "content/api/v1/subscribers/{msisdn}", hasBody = true)
+    suspend fun deleteRanati(
+        @Header("Authorization") auth: String,
+        @Path("msisdn") msisdn: String,
+        @Body body: RanatiDeleteBody
     ): Response<ApiResponse<Any>>
 
     // ── Walk & Win ────────────────────────────────────────────────────────────

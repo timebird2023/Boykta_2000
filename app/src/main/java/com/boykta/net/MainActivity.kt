@@ -29,6 +29,8 @@ class MainActivity : ComponentActivity() {
 
         // Initialize Start.io SDK once
         AdsManager.init(this)
+        // Initialize ApiClient with context (needed for token refresh Authenticator)
+        com.boykta.net.data.api.ApiClient.init(this)
 
         enableEdgeToEdge()
 

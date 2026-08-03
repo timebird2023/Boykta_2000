@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
@@ -40,7 +39,10 @@ fun DashboardScreen(navController: NavController, vm: DashboardViewModel = viewM
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text("boykta net", style = MaterialTheme.typography.titleMedium.copy(color = Primary, fontWeight = FontWeight.Bold))
+                    Text(
+                        "boykta net",
+                        style = MaterialTheme.typography.titleMedium.copy(color = Primary, fontWeight = FontWeight.Bold)
+                    )
                     if (state.accountName.isNotBlank())
                         Text(state.accountName, style = MaterialTheme.typography.bodyMedium)
                 }
@@ -73,19 +75,58 @@ fun DashboardScreen(navController: NavController, vm: DashboardViewModel = viewM
                     if (state.phoneDisplay.isNotBlank())
                         Text(state.phoneDisplay, style = MaterialTheme.typography.bodyMedium)
 
-                    // Active packages
+                    // ── Active packages ─────────────────────────────────────
+                    // Real API structure: data.products[].balances[] (not a flat list)
                     if (state.productBalances.isNotEmpty()) {
                         HorizontalDivider(color = Border, thickness = 0.5.dp, modifier = Modifier.padding(vertical = 6.dp))
                         Text("الباقات النشطة", style = MaterialTheme.typography.labelMedium)
-                        state.productBalances.forEach { p ->
-                            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
-                                Text(p.commercialName?.ar ?: p.packageCode ?: "", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                                Text(p.remaining ?: "", style = MaterialTheme.typography.bodyMedium, color = Primary)
+                        state.productBalances.forEach { product ->
+                            val name = product.commercialName?.ar ?: "باقة"
+                            val expiry = product.expiryAt
+                            val balances = product.balances
+                            if (!balances.isNullOrEmpty()) {
+                                balances.forEach { balance ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text(
+                                                name,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = TextPrimary
+                                            )
+                                            if (!expiry.isNullOrBlank()) {
+                                                Text(
+                                                    "ينتهي: $expiry",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = TextSecondary
+                                                )
+                                            }
+                                        }
+                                        Text(
+                                            balance.displayRemaining(),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = Primary,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+                            } else {
+                                // Package exists but no balance detail — show name only
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                    Text("--", style = MaterialTheme.typography.bodyMedium, color = Primary)
+                                }
                             }
                         }
                     }
 
-                    // History accordion
+                    // ── History accordion ───────────────────────────────────
                     HorizontalDivider(color = Border, thickness = 0.5.dp, modifier = Modifier.padding(vertical = 6.dp))
                     Row(
                         Modifier.fillMaxWidth().clickable { historyExpanded = !historyExpanded },
@@ -101,8 +142,16 @@ fun DashboardScreen(navController: NavController, vm: DashboardViewModel = viewM
                     if (historyExpanded) {
                         state.subscriptionHistory.take(10).forEach { h ->
                             Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), Arrangement.SpaceBetween) {
-                                Text(h.commercialName?.ar ?: h.packageCode ?: "", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                                Text("%.0f دج".format(h.packageFee ?: 0.0), style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                                Text(
+                                    h.commercialName?.ar ?: h.packageCode ?: "",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    "%.0f دج".format(h.packageFee ?: 0.0),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = TextSecondary
+                                )
                             }
                         }
                     }
@@ -115,10 +164,10 @@ fun DashboardScreen(navController: NavController, vm: DashboardViewModel = viewM
 
         item {
             val services = listOf(
-                Triple("العروض",    Icons.Outlined.ShoppingCart, Screen.Offers.route),
-                Triple("فليكسي",   Icons.Outlined.SwapHoriz,    Screen.Flexy.route),
-                Triple("رسائل",    Icons.Outlined.Chat,          Screen.FreeSms.route),
-                Triple("امشِ واربح", Icons.Outlined.DirectionsRun, Screen.WalkWin.route)
+                Triple("العروض",     Icons.Outlined.ShoppingCart,  Screen.Offers.route),
+                Triple("فليكسي",    Icons.Outlined.SwapHoriz,     Screen.Flexy.route),
+                Triple("رسائل",     Icons.Outlined.Chat,           Screen.FreeSms.route),
+                Triple("امشِ واربح", Icons.Outlined.DirectionsRun,  Screen.WalkWin.route)
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -142,7 +191,7 @@ fun DashboardScreen(navController: NavController, vm: DashboardViewModel = viewM
             }
         }
 
-        // Refresh
+        // ── Refresh ─────────────────────────────────────────────────────────
         item {
             TextButton(onClick = { vm.loadAll() }, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Outlined.Refresh, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(16.dp))

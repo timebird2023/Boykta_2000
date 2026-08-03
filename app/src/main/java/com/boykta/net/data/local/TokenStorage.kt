@@ -16,17 +16,21 @@ class TokenStorage(private val context: Context) {
 
     companion object {
         private val KEY_ACCESS_TOKEN   = stringPreferencesKey("access_token")
+        private val KEY_REFRESH_TOKEN  = stringPreferencesKey("refresh_token")
         private val KEY_MSISDN         = stringPreferencesKey("msisdn")
         private val KEY_PHONE_DISPLAY  = stringPreferencesKey("phone_display")
         private val KEY_ACCOUNT_NAME   = stringPreferencesKey("account_name")
         private val KEY_TOKEN_EXPIRY   = longPreferencesKey("token_expiry")
-        // multi-account: store JSON list
         private val KEY_ACCOUNTS_JSON  = stringPreferencesKey("accounts_json")
     }
 
     val accessToken: Flow<String?> = context.dataStore.data
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { it[KEY_ACCESS_TOKEN] }
+
+    val refreshToken: Flow<String?> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { it[KEY_REFRESH_TOKEN] }
 
     val msisdn: Flow<String?> = context.dataStore.data
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
@@ -49,20 +53,35 @@ class TokenStorage(private val context: Context) {
         msisdn: String,
         phoneDisplay: String,
         accountName: String,
+        refreshToken: String? = null,
         expiresInSeconds: Long = 3600L
     ) {
         context.dataStore.edit { prefs ->
-            prefs[KEY_ACCESS_TOKEN]   = accessToken
-            prefs[KEY_MSISDN]         = msisdn
-            prefs[KEY_PHONE_DISPLAY]  = phoneDisplay
-            prefs[KEY_ACCOUNT_NAME]   = accountName
-            prefs[KEY_TOKEN_EXPIRY]   = System.currentTimeMillis() + expiresInSeconds * 1000
+            prefs[KEY_ACCESS_TOKEN]  = accessToken
+            prefs[KEY_MSISDN]        = msisdn
+            prefs[KEY_PHONE_DISPLAY] = phoneDisplay
+            prefs[KEY_ACCOUNT_NAME]  = accountName
+            prefs[KEY_TOKEN_EXPIRY]  = System.currentTimeMillis() + expiresInSeconds * 1000
+            if (refreshToken != null) prefs[KEY_REFRESH_TOKEN] = refreshToken
+        }
+    }
+
+    /**
+     * Update only the access and (optionally) refresh tokens after a silent token refresh.
+     * Does not touch msisdn, accountName, or phoneDisplay.
+     */
+    suspend fun updateToken(newAccessToken: String, newRefreshToken: String?) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_ACCESS_TOKEN] = newAccessToken
+            prefs[KEY_TOKEN_EXPIRY] = System.currentTimeMillis() + 3600L * 1000
+            if (newRefreshToken != null) prefs[KEY_REFRESH_TOKEN] = newRefreshToken
         }
     }
 
     suspend fun clearToken() {
         context.dataStore.edit { prefs ->
             prefs.remove(KEY_ACCESS_TOKEN)
+            prefs.remove(KEY_REFRESH_TOKEN)
             prefs.remove(KEY_MSISDN)
             prefs.remove(KEY_PHONE_DISPLAY)
             prefs.remove(KEY_ACCOUNT_NAME)
