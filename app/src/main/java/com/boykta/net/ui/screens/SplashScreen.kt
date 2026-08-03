@@ -41,8 +41,8 @@ fun SplashScreen(navController: NavController) {
                 popUpTo(Screen.Splash.route) { inclusive = true }
             }
         } else {
-            // Clear any expired token silently
-            tokenStorage.clearToken()
+            // Clear any expired token silently — wrapped to survive DataStore I/O edge cases
+            try { tokenStorage.clearToken() } catch (_: Exception) {}
             navController.navigate(Screen.Auth.route) {
                 popUpTo(Screen.Splash.route) { inclusive = true }
             }
@@ -59,12 +59,12 @@ fun SplashScreen(navController: NavController) {
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.alpha(alpha)
         ) {
-            // App icon
+            // App icon — use drawable to avoid adaptive-icon resolution issues at runtime
             Image(
-                painter = painterResource(id = R.mipmap.ic_launcher),
+                painter = painterResource(id = R.drawable.ic_splash_icon),
                 contentDescription = "boykta net",
                 modifier = Modifier
-                    .size(100.dp)
+                    .size(120.dp)
                     .clip(CircleShape)
             )
             Spacer(Modifier.height(20.dp))
