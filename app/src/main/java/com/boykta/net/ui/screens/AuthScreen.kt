@@ -92,6 +92,13 @@ fun AuthScreen(navController: NavController, vm: AuthViewModel = viewModel()) {
         onDispose { context.unregisterReceiver(receiver) }
     }
 
+    // ── Auto-verify when OTP reaches 6 digits (e.g. auto-filled from SMS) ────
+    LaunchedEffect(otpDigits) {
+        if (otpSent && otpDigits.length == 6 && uiState !is AuthUiState.Loading) {
+            vm.verifyOtp(otpDigits, accountName, phone)
+        }
+    }
+
     // ── Countdown timer ───────────────────────────────────────────────────────
     LaunchedEffect(countdown) {
         if (countdown > 0) { delay(1000); countdown-- }

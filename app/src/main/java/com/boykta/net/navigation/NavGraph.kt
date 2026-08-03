@@ -58,5 +58,9 @@ fun NavGraph(navController: NavHostController) {
         composable(Screen.Mgm.route) {
             MgmScreen(navController = navController)
         }
+
+        composable(Screen.PrivacyPolicy.route) {
+            PrivacyPolicyScreen(navController = navController)
+        }
     }
 }

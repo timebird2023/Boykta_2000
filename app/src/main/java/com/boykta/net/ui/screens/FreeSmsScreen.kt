@@ -99,10 +99,11 @@ fun FreeSmsScreen(navController: NavController, vm: FreeSmsViewModel = viewModel
     val uiState  by vm.state.collectAsState()
     val balance  by vm.balance.collectAsState()
 
-    var phone       by remember { mutableStateOf("") }
-    var showSuccess by remember { mutableStateOf(false) }
-    var showError   by remember { mutableStateOf(false) }
-    var errorMsg    by remember { mutableStateOf("") }
+    var phone        by remember { mutableStateOf("") }
+    var selectedType by remember { mutableStateOf("CALLME") }   // "CALLME" | "FLEXYLI"
+    var showSuccess  by remember { mutableStateOf(false) }
+    var showError    by remember { mutableStateOf(false) }
+    var errorMsg     by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) { vm.checkBipBalance() }
 
@@ -176,33 +177,57 @@ fun FreeSmsScreen(navController: NavController, vm: FreeSmsViewModel = viewModel
                 enabled       = uiState !is SmsUiState.Loading
             )
 
-            // ── Action buttons: كلمني + فليكسيلي ─────────────────────────────
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(
-                    onClick  = { vm.sendBip(phone, "CALLME") },
-                    modifier = Modifier.weight(1f).height(52.dp),
-                    enabled  = uiState !is SmsUiState.Loading,
-                    shape    = RoundedCornerShape(12.dp),
-                    colors   = ButtonDefaults.outlinedButtonColors(contentColor = Primary)
-                ) {
-                    if (uiState is SmsUiState.Loading)
-                        CircularProgressIndicator(Modifier.size(18.dp), color = Primary, strokeWidth = 2.dp)
-                    else
-                        Text("كلمني", fontWeight = FontWeight.SemiBold)
+            // ── Message type selection ────────────────────────────────────────
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "نوع الرسالة",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = TextSecondary
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    listOf("CALLME" to "كلمني", "FLEXYLI" to "فليكسيلي").forEach { (value, label) ->
+                        val isSelected = selectedType == value
+                        OutlinedButton(
+                            onClick  = { selectedType = value },
+                            modifier = Modifier.weight(1f).height(48.dp),
+                            enabled  = uiState !is SmsUiState.Loading,
+                            shape    = RoundedCornerShape(12.dp),
+                            colors   = if (isSelected)
+                                ButtonDefaults.outlinedButtonColors(
+                                    containerColor = Primary.copy(alpha = 0.12f),
+                                    contentColor   = Primary
+                                )
+                            else
+                                ButtonDefaults.outlinedButtonColors(
+                                    containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                                    contentColor   = TextSecondary
+                                ),
+                            border = androidx.compose.foundation.BorderStroke(
+                                width = if (isSelected) 2.dp else 1.dp,
+                                color = if (isSelected) Primary else Border
+                            )
+                        ) {
+                            Text(label, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+                        }
+                    }
                 }
+            }
 
-                Button(
-                    onClick  = { vm.sendBip(phone, "FLEXYLI") },
-                    modifier = Modifier.weight(1f).height(52.dp),
-                    enabled  = uiState !is SmsUiState.Loading,
-                    colors   = ButtonDefaults.buttonColors(containerColor = Primary, contentColor = OnPrimary),
-                    shape    = RoundedCornerShape(12.dp)
-                ) {
-                    if (uiState is SmsUiState.Loading)
-                        CircularProgressIndicator(Modifier.size(18.dp), color = OnPrimary, strokeWidth = 2.dp)
-                    else
-                        Text("فليكسيلي", fontWeight = FontWeight.SemiBold)
-                }
+            // ── Confirm / Send button ─────────────────────────────────────────
+            Button(
+                onClick  = { vm.sendBip(phone, selectedType) },
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                enabled  = uiState !is SmsUiState.Loading,
+                colors   = ButtonDefaults.buttonColors(containerColor = Primary, contentColor = OnPrimary),
+                shape    = RoundedCornerShape(12.dp)
+            ) {
+                if (uiState is SmsUiState.Loading)
+                    CircularProgressIndicator(Modifier.size(18.dp), color = OnPrimary, strokeWidth = 2.dp)
+                else
+                    Text(
+                        "إرسال رسالة ${if (selectedType == "CALLME") "كلمني" else "فليكسيلي"}",
+                        fontWeight = FontWeight.SemiBold
+                    )
             }
         }
     }

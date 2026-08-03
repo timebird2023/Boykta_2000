@@ -25,6 +25,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.boykta.net.ads.AdsManager
 import com.boykta.net.data.api.ApiClient
+import com.boykta.net.notifications.NotificationScheduler
 import com.boykta.net.data.local.TokenStorage
 import com.boykta.net.data.models.ActivateProductRequest
 import com.boykta.net.data.models.PaidOffer
@@ -146,9 +147,16 @@ fun WalkWinScreen(navController: NavController, vm: WalkWinViewModel = viewModel
         }
     }
 
+    // Ensure notification channel exists
+    LaunchedEffect(Unit) { NotificationScheduler.createChannel(context) }
+
     LaunchedEffect(uiState) {
         when (val s = uiState) {
-            is WalkUiState.Success -> showSuccess = true
+            is WalkUiState.Success -> {
+                showSuccess = true
+                // Schedule a local reminder 7 days from now
+                NotificationScheduler.scheduleWalkWinReminder(context)
+            }
             is WalkUiState.Error   -> { errorMsg = s.message; showError = true }
             else -> {}
         }

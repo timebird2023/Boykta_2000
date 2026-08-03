@@ -3,6 +3,8 @@ package com.boykta.net.ui.screens
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.core.content.FileProvider
+import java.io.File
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -346,19 +348,45 @@ fun SettingsScreen(navController: NavController, netVm: NetworkServicesViewModel
             SettingsItem(
                 icon = Icons.Outlined.Share,
                 label = "مشاركة التطبيق",
+                subtitle = "مشاركة ملف APK",
                 onClick = {
-                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, "تطبيق boykta net — خدمات جيزي بسهولة\nhttps://www.facebook.com/boyktanet")
+                    scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                        try {
+                            @Suppress("DEPRECATION")
+                            val sourceApk = File(
+                                context.packageManager
+                                    .getPackageInfo(context.packageName, 0)
+                                    .applicationInfo.sourceDir
+                            )
+                            val destFile = File(context.cacheDir, "boykta_net.apk")
+                            sourceApk.copyTo(destFile, overwrite = true)
+                            val apkUri = FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.fileprovider",
+                                destFile
+                            )
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "application/vnd.android.package-archive"
+                                putExtra(Intent.EXTRA_STREAM, apkUri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "مشاركة التطبيق"))
+                        } catch (_: Exception) {
+                            // Fallback: share as link
+                            val fallback = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, "تطبيق boykta net — خدمات جيزي بسهولة\nhttps://www.facebook.com/boyktanet")
+                            }
+                            context.startActivity(Intent.createChooser(fallback, "مشاركة"))
+                        }
                     }
-                    context.startActivity(Intent.createChooser(shareIntent, "مشاركة"))
                 }
             )
 
             SettingsItem(
                 icon = Icons.Outlined.Policy,
                 label = "سياسة الخصوصية",
-                onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.facebook.com/boyktanet"))) }
+                onClick = { navController.navigate(com.boykta.net.navigation.Screen.PrivacyPolicy.route) }
             )
 
             SettingsItem(
