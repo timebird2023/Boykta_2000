@@ -8,12 +8,13 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 
 // ── Deep containers derived from brand palette ────────────────────────────────
-private val CyanContainer      = Color(0xFF003D50)   // deep cyan (dark)
-private val CyanContainerLight = Color(0xFFCCEEFF)   // icy cyan (light)
-private val RedContainer       = Color(0xFF4A0015)   // deep red (dark)
-private val RedContainerLight  = Color(0xFFFFDADA)   // pale red (light)
-private val OnCyanContainerL   = Color(0xFF004060)
-private val OnRedContainerL    = Color(0xFF7A0000)
+private val White             = Color(0xFFFFFFFF)
+private val CyanContainer     = Color(0xFF003D50)   // deep cyan (dark mode)
+private val CyanContainerL    = Color(0xFFCCEEFF)   // icy cyan (light mode)
+private val RedContainer      = Color(0xFF4A0015)   // deep red (dark mode)
+private val RedContainerL     = Color(0xFFFFDADA)   // pale red (light mode)
+private val OnCyanContainerL  = Color(0xFF004060)
+private val OnRedContainerL   = Color(0xFF7A0000)
 
 private val DarkColorScheme = darkColorScheme(
     primary              = Primary,
@@ -37,12 +38,12 @@ private val DarkColorScheme = darkColorScheme(
 
 private val LightColorScheme = lightColorScheme(
     primary              = PrimaryDark,
-    onPrimary            = Color.White,
-    primaryContainer     = CyanContainerLight,
+    onPrimary            = White,
+    primaryContainer     = CyanContainerL,
     onPrimaryContainer   = OnCyanContainerL,
     secondary            = Accent,
-    onSecondary          = Color.White,
-    secondaryContainer   = RedContainerLight,
+    onSecondary          = White,
+    secondaryContainer   = RedContainerL,
     onSecondaryContainer = OnRedContainerL,
     background           = LightAppColors.background,
     surface              = LightAppColors.surface,
@@ -51,7 +52,7 @@ private val LightColorScheme = lightColorScheme(
     onSurface            = LightAppColors.textPrimary,
     onSurfaceVariant     = LightAppColors.textSecondary,
     error                = Error,
-    onError              = Color.White,
+    onError              = White,
     outline              = LightAppColors.border
 )
 
