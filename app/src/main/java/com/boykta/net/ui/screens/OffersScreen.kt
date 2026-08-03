@@ -123,23 +123,53 @@ private fun OfferCard(offer: PaidOffer, onClick: () -> Unit) {
         border = androidx.compose.foundation.BorderStroke(1.dp, Border),
         onClick = onClick
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp).fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f)) {
-                Text(offer.name, style = MaterialTheme.typography.titleMedium, color = TextPrimary, fontWeight = FontWeight.SemiBold)
-                Text(offer.amount, style = MaterialTheme.typography.bodyMedium, color = Primary)
-                Text(offer.duration, style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-            }
-            Box(
-                modifier = Modifier
-                    .background(Primary.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
+        Column(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Title row
+            Text(offer.name, style = MaterialTheme.typography.titleMedium, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+
+            // Detail rows: الحجم / السعر / المدة
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("${offer.price} دج", color = Primary, fontWeight = FontWeight.Bold)
+                // الحجم
+                DetailChip(label = "الحجم", value = offer.amount, modifier = Modifier.weight(1f))
+                // السعر
+                DetailChip(label = "السعر", value = "${offer.price} دج", isAccent = true, modifier = Modifier.weight(1f))
+                // المدة
+                DetailChip(label = "المدة", value = offer.duration, modifier = Modifier.weight(1f))
             }
         }
+    }
+}
+
+@Composable
+private fun DetailChip(
+    label: String,
+    value: String,
+    isAccent: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .background(
+                if (isAccent) Primary.copy(alpha = 0.12f) else SurfaceVariant,
+                RoundedCornerShape(8.dp)
+            )
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (isAccent) Primary else TextSecondary
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (isAccent) Primary else TextPrimary,
+            fontWeight = if (isAccent) FontWeight.Bold else FontWeight.Normal
+        )
     }
 }

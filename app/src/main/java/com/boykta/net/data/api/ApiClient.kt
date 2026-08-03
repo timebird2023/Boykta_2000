@@ -74,7 +74,13 @@ object ApiClient {
                         val newAccess = tokenResp.accessToken ?: return@runBlocking null
                         storage.updateToken(newAccess, tokenResp.refreshToken)
                         newAccess
-                    } else null
+                    } else {
+                        // Refresh failed — token is truly dead (e.g. bot logged in on same number).
+                        // Clear the stored token and signal the app to navigate to Auth.
+                        storage.clearToken()
+                        SessionManager.notifySessionExpired()
+                        null
+                    }
                 } catch (e: Exception) { null }
             } ?: return null
 

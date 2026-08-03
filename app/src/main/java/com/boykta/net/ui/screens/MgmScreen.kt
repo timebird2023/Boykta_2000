@@ -64,9 +64,37 @@ class MgmViewModel(application: android.app.Application) : AndroidViewModel(appl
     /** Count of accepted invites. */
     val successfulCount: Int get() = _invites.value.count { it.accepted }
 
-    init { loadInvites() }
+    init { loadInvitesFromApi() }
 
-    private fun loadInvites() {
+    /**
+     * Fetches the real invitation list from the server.
+     * Falls back to locally-stored invitations if the API call fails.
+     */
+    fun loadInvitesFromApi() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val token  = tokenStorage.accessToken.firstOrNull() ?: return@launch
+            val msisdn = tokenStorage.msisdn.firstOrNull() ?: return@launch
+            try {
+                val resp = api.getMgmInvitations("Bearer $token", msisdn)
+                if (resp.isSuccessful) {
+                    val serverItems = resp.body()?.data?.invitations ?: emptyList()
+                    val mapped = serverItems.map { item ->
+                        MgmInvite(
+                            phone    = formatMsisdn(item.msisdnReceiver ?: ""),
+                            accepted = item.status?.uppercase() == "DONE",
+                            sentAt   = 0L
+                        )
+                    }
+                    saveInvites(mapped)
+                    return@launch
+                }
+            } catch (_: Exception) { }
+            // Fallback: load from DataStore
+            loadInvitesLocal()
+        }
+    }
+
+    private fun loadInvitesLocal() {
         viewModelScope.launch {
             tokenStorage.mgmInvitesJson.firstOrNull()?.let { json ->
                 try {
@@ -76,6 +104,10 @@ class MgmViewModel(application: android.app.Application) : AndroidViewModel(appl
             }
         }
     }
+
+    /** Convert 213xxxxxxxxx → 0xxxxxxxxx for display */
+    private fun formatMsisdn(msisdn: String): String =
+        if (msisdn.startsWith("213")) "0${msisdn.removePrefix("213")}" else msisdn
 
     private suspend fun saveInvites(list: List<MgmInvite>) {
         _invites.value = list

@@ -1,9 +1,13 @@
 package com.boykta.net.ui.screens
 
+import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -57,6 +61,19 @@ fun AuthScreen(navController: NavController, vm: AuthViewModel = viewModel()) {
     val otpFocusReq   = remember { FocusRequester() }
 
     val otpSent = uiState is AuthUiState.OtpSent
+
+    // ── Runtime SMS permission (needed for auto-fill on Android 6+) ───────────
+    val smsPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { /* result is not used — we attempt auto-fill regardless */ }
+
+    LaunchedEffect(Unit) {
+        val smsPerms = arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS)
+        val missing = smsPerms.filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) smsPermissionLauncher.launch(missing.toTypedArray())
+    }
 
     // ── SMS auto-read ─────────────────────────────────────────────────────────
     DisposableEffect(context) {

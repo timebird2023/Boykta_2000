@@ -25,6 +25,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.boykta.net.data.api.ApiClient
 import com.boykta.net.data.local.TokenStorage
+import com.boykta.net.data.models.NetworkServiceItem
 import com.boykta.net.data.models.NetworkServiceRequest
 import com.boykta.net.data.models.RanatiDeleteBody
 import com.boykta.net.data.models.RanatiDeleteData
@@ -62,7 +63,39 @@ class NetworkServicesViewModel(application: android.app.Application) : AndroidVi
     private val _svcState = MutableStateFlow(NetworkServiceState())
     val svcState: StateFlow<NetworkServiceState> = _svcState.asStateFlow()
 
-    init { loadStoredStates() }
+    init { loadNetworkServicesFromApi() }
+
+    /**
+     * Fetches actual network service states from the server.
+     * Falls back to locally-cached values if the call fails.
+     */
+    fun loadNetworkServicesFromApi() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val token  = tokenStorage.accessToken.firstOrNull() ?: run { loadStoredStates(); return@launch }
+            val msisdn = tokenStorage.msisdn.firstOrNull() ?: run { loadStoredStates(); return@launch }
+            try {
+                val resp = api.getNetworkServices("Bearer $token", msisdn)
+                if (resp.isSuccessful) {
+                    val items = resp.body()?.data ?: emptyList()
+                    var appelMasque: Boolean? = null
+                    var callWait: Boolean? = null
+                    for (item in items) {
+                        val active = item.status?.uppercase() == "ACTIVE"
+                        when (item.code?.uppercase()) {
+                            "APPELMASQUE" -> appelMasque = active
+                            "CALLWAIT"    -> callWait    = active
+                        }
+                    }
+                    // Persist so we have them offline
+                    if (appelMasque != null) tokenStorage.setNetworkServiceState("APPELMASQUE", appelMasque)
+                    if (callWait    != null) tokenStorage.setNetworkServiceState("CALLWAIT",    callWait)
+                    _svcState.update { it.copy(appelMasqueEnabled = appelMasque, callWaitEnabled = callWait) }
+                    return@launch
+                }
+            } catch (_: Exception) { }
+            loadStoredStates()
+        }
+    }
 
     private fun loadStoredStates() {
         viewModelScope.launch {
@@ -78,8 +111,8 @@ class NetworkServicesViewModel(application: android.app.Application) : AndroidVi
 
     /**
      * Toggle a network service.
-     * If current state is known, send the opposite action.
-     * If unknown, attempt ACTIVATE first.
+     * Recordings confirm body: {"code":"APPELMASQUE","activate":true/false}
+     * If current state is known → send opposite; if unknown → attempt activate first.
      */
     fun toggleService(serviceId: String) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -94,28 +127,27 @@ class NetworkServicesViewModel(application: android.app.Application) : AndroidVi
                 "CALLWAIT"    -> _svcState.value.callWaitEnabled
                 else          -> null
             }
-            // If currently enabled → DEACTIVATE, else → ACTIVATE
-            val action = if (currentEnabled == true) "DEACTIVATE" else "ACTIVATE"
+            // If currently enabled → deactivate; else → activate
+            val newActivate = currentEnabled != true
 
             try {
                 val resp = api.toggleNetworkService(
                     "Bearer $token", msisdn,
-                    NetworkServiceRequest(serviceId = serviceId, action = action)
+                    NetworkServiceRequest(code = serviceId, activate = newActivate)
                 )
                 if (resp.isSuccessful || resp.code() in 200..201) {
-                    val newEnabled = action == "ACTIVATE"
-                    tokenStorage.setNetworkServiceState(serviceId, newEnabled)
+                    tokenStorage.setNetworkServiceState(serviceId, newActivate)
                     when (serviceId) {
-                        "APPELMASQUE" -> _svcState.update { it.copy(appelMasqueEnabled = newEnabled) }
-                        "CALLWAIT"    -> _svcState.update { it.copy(callWaitEnabled    = newEnabled) }
+                        "APPELMASQUE" -> _svcState.update { it.copy(appelMasqueEnabled = newActivate) }
+                        "CALLWAIT"    -> _svcState.update { it.copy(callWaitEnabled    = newActivate) }
                     }
                     _state.value = NetworkUiState.Success
                 } else {
-                    // If ACTIVATE returned error, maybe it was already ON — try DEACTIVATE
-                    if (action == "ACTIVATE") {
+                    // If activate failed, maybe it was already ON — try the opposite
+                    if (newActivate) {
                         val resp2 = api.toggleNetworkService(
                             "Bearer $token", msisdn,
-                            NetworkServiceRequest(serviceId = serviceId, action = "DEACTIVATE")
+                            NetworkServiceRequest(code = serviceId, activate = false)
                         )
                         if (resp2.isSuccessful || resp2.code() in 200..201) {
                             tokenStorage.setNetworkServiceState(serviceId, false)

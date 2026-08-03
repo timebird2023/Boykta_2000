@@ -147,6 +147,12 @@ interface DjezzyApi {
         @Body body: MgmInviteRequest
     ): Response<ApiResponse<Any>>
 
+    @GET("api/v1/services/mgm/invitations/{msisdn}")
+    suspend fun getMgmInvitations(
+        @Header("Authorization") auth: String,
+        @Path("msisdn") msisdn: String
+    ): Response<ApiResponse<MgmInvitationsData>>
+
     @POST("api/v1/services/mgm/activate-reward/{msisdn}")
     suspend fun activateMgmReward(
         @Header("Authorization") auth: String,
@@ -154,10 +160,17 @@ interface DjezzyApi {
     ): Response<ApiResponse<Any>>
 
     // ── Network Services ─────────────────────────────────────────────────────
-    // serviceId: "APPELMASQUE" (hide caller ID) | "CALLWAIT" (call waiting)
-    // action:    "ACTIVATE" | "DEACTIVATE"
+    // Confirmed from Reqable recordings:
+    //   GET  api/v1/services/network-services/{msisdn}  → current states
+    //   POST api/v1/services/network-services/{msisdn}  → body {"code":"APPELMASQUE","activate":bool}
 
-    @POST("api/v1/services/network-services/{msisdn}/toggle")
+    @GET("api/v1/services/network-services/{msisdn}")
+    suspend fun getNetworkServices(
+        @Header("Authorization") auth: String,
+        @Path("msisdn") msisdn: String
+    ): Response<ApiResponse<List<NetworkServiceItem>>>
+
+    @POST("api/v1/services/network-services/{msisdn}")
     suspend fun toggleNetworkService(
         @Header("Authorization") auth: String,
         @Path("msisdn") msisdn: String,

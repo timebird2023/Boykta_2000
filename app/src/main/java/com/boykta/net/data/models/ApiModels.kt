@@ -74,12 +74,14 @@ data class BalanceItem(
     @SerializedName("remaining")  val remaining: Double?,
     @SerializedName("usageUnit")  val usageUnit: String?   // "MB", "GB", "Voice", etc.
 ) {
-    /** Human-readable remaining, e.g. "2.00 GB" or "512 MB" */
+    /** Human-readable remaining with Western (Locale.US) digits, e.g. "2.00 GB" or "512 MB" */
     fun displayRemaining(): String {
         val rem = remaining ?: return "--"
         return when {
-            usageUnit == "MB" && rem > 1024 -> "${"%.2f".format(rem / 1024)} GB"
-            else                            -> "${"%.0f".format(rem)} ${usageUnit ?: ""}"
+            usageUnit == "MB" && rem > 1024 ->
+                String.format(java.util.Locale.US, "%.2f", rem / 1024) + " GB"
+            else ->
+                String.format(java.util.Locale.US, "%.0f", rem) + " ${usageUnit ?: ""}"
         }
     }
 }
@@ -142,11 +144,32 @@ data class MgmInviteRequest(
     @SerializedName("msisdnReceiver") val msisdnReceiver: Long
 )
 
+/** Wrapper for GET /api/v1/services/mgm/invitations/{msisdn} response data */
+data class MgmInvitationsData(
+    @SerializedName("invitations") val invitations: List<MgmInvitationServerItem>?
+)
+
+data class MgmInvitationServerItem(
+    @SerializedName("id")              val id: String?,
+    @SerializedName("msisdnReceiver")  val msisdnReceiver: String?,
+    @SerializedName("status")          val status: String?,   // "DONE", "PENDING", etc.
+    @SerializedName("smsSendAt")       val smsSendAt: String?,
+    @SerializedName("createdAt")       val createdAt: String?
+)
+
 // ── Network Services ─────────────────────────────────────────────────────────
+//
+// Confirmed from Reqable recordings: body is {"code":"APPELMASQUE","activate":true/false}
+// NOT {"serviceId":...,"action":"ACTIVATE"} — that format is wrong.
 
 data class NetworkServiceRequest(
-    @SerializedName("serviceId") val serviceId: String,
-    @SerializedName("action")    val action: String    // "ACTIVATE" | "DEACTIVATE"
+    @SerializedName("code")     val code: String,
+    @SerializedName("activate") val activate: Boolean
+)
+
+data class NetworkServiceItem(
+    @SerializedName("code")    val code: String?,
+    @SerializedName("status")  val status: String?    // "ACTIVE" | "INACTIVE" | etc.
 )
 
 // ── Ranati (RBT ring-back tone) ───────────────────────────────────────────────
