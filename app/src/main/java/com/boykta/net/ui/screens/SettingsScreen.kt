@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -229,6 +230,7 @@ fun SettingsScreen(navController: NavController, netVm: NetworkServicesViewModel
 
     val accountName  by tokenStorage.accountName.collectAsState(initial = "")
     val phoneDisplay by tokenStorage.phoneDisplay.collectAsState(initial = "")
+    val isDarkTheme  by tokenStorage.isDarkTheme.collectAsState(initial = true)
 
     LaunchedEffect(netState) {
         when (val s = netState) {
@@ -357,6 +359,22 @@ fun SettingsScreen(navController: NavController, netVm: NetworkServicesViewModel
                         null  -> netVm.loadNetworkServicesFromApi() // still loading → refresh
                     }
                 }
+            )
+
+            Spacer(Modifier.height(4.dp))
+
+            Spacer(Modifier.height(4.dp))
+
+            // ── المظهر ────────────────────────────────────────────────────────
+            Text("المظهر", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+
+            SmartToggleItem(
+                icon      = if (isDarkTheme) Icons.Outlined.DarkMode else Icons.Outlined.LightMode,
+                label     = if (isDarkTheme) "الوضع المظلم" else "الوضع النهاري",
+                subtitle  = "اضغط للتبديل بين المظهرين",
+                enabled   = isDarkTheme,
+                isLoading = false,
+                onClick   = { scope.launch { tokenStorage.setDarkTheme(!isDarkTheme) } }
             )
 
             Spacer(Modifier.height(4.dp))
@@ -493,10 +511,13 @@ private fun SettingsItem(
     icon: ImageVector,
     label: String,
     subtitle: String? = null,
-    labelColor: androidx.compose.ui.graphics.Color = TextPrimary,
+    // Color.Unspecified = default (TextPrimary text, TextSecondary icon)
+    // Any other color = used for both icon tint and label (e.g. Error for destructive actions)
+    labelColor: Color = Color.Unspecified,
     isLoading: Boolean = false,
     onClick: () -> Unit
 ) {
+    val isDefault = labelColor == Color.Unspecified
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -510,11 +531,12 @@ private fun SettingsItem(
         Icon(
             icon,
             contentDescription = null,
-            tint = if (labelColor == TextPrimary) TextSecondary else labelColor,
+            tint = if (isDefault) TextSecondary else labelColor,
             modifier = Modifier.size(22.dp)
         )
         Column(Modifier.weight(1f)) {
-            Text(label, style = MaterialTheme.typography.bodyLarge, color = labelColor)
+            Text(label, style = MaterialTheme.typography.bodyLarge,
+                color = if (isDefault) TextPrimary else labelColor)
             if (subtitle != null)
                 Text(subtitle, style = MaterialTheme.typography.labelMedium, color = TextSecondary)
         }

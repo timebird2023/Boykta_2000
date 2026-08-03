@@ -37,6 +37,7 @@ class TokenStorage(private val context: Context) {
         private val KEY_WALK_LAST_ACT  = longPreferencesKey("walk_last_activation")
         private val KEY_NET_SVC_JSON   = stringPreferencesKey("net_svc_states")
         private val KEY_MGM_INVITES    = stringPreferencesKey("mgm_invites_json")
+        private val KEY_DARK_THEME     = booleanPreferencesKey("dark_theme")
 
         const val MAX_ACCOUNTS = 5
 
@@ -215,6 +216,17 @@ class TokenStorage(private val context: Context) {
             val expiry = prefs[KEY_TOKEN_EXPIRY] ?: 0L
             !token.isNullOrBlank() && System.currentTimeMillis() < expiry
         } catch (e: Exception) { false }
+    }
+
+    // ── Theme preference ─────────────────────────────────────────────────────
+
+    /** true = dark theme (default), false = light theme */
+    val isDarkTheme: Flow<Boolean> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { it[KEY_DARK_THEME] ?: true }
+
+    suspend fun setDarkTheme(dark: Boolean) {
+        context.dataStore.edit { it[KEY_DARK_THEME] = dark }
     }
 
     // ── Walk & Win ────────────────────────────────────────────────────────────
