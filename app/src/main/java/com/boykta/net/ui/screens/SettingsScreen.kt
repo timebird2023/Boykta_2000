@@ -51,8 +51,9 @@ sealed class NetworkUiState {
 
 data class NetworkServiceState(
     val appelMasqueEnabled: Boolean? = null,  // null = unknown
-    val callWaitEnabled: Boolean?   = null,
-    val isLoading: Boolean          = false
+    val callWaitEnabled: Boolean?    = null,
+    val ranatiActive: Boolean?       = null,  // null = still loading
+    val isLoading: Boolean           = false
 )
 
 class NetworkServicesViewModel(application: android.app.Application) : AndroidViewModel(application) {
@@ -75,8 +76,11 @@ class NetworkServicesViewModel(application: android.app.Application) : AndroidVi
         viewModelScope.launch(Dispatchers.IO) {
             val token  = tokenStorage.accessToken.firstOrNull() ?: run { loadStoredStates(); return@launch }
             val msisdn = tokenStorage.msisdn.firstOrNull() ?: run { loadStoredStates(); return@launch }
+            val auth   = "Bearer $token"
+
+            // ── Network services (APPELMASQUE / CALLWAIT) ──────────────────────
             try {
-                val resp = api.getNetworkServices("Bearer $token", msisdn)
+                val resp = api.getNetworkServices(auth, msisdn)
                 if (resp.isSuccessful) {
                     val items = resp.body()?.data ?: emptyList()
                     var appelMasque: Boolean? = null
@@ -88,14 +92,26 @@ class NetworkServicesViewModel(application: android.app.Application) : AndroidVi
                             "CALLWAIT"    -> callWait    = active
                         }
                     }
-                    // Persist so we have them offline
                     if (appelMasque != null) tokenStorage.setNetworkServiceState("APPELMASQUE", appelMasque)
                     if (callWait    != null) tokenStorage.setNetworkServiceState("CALLWAIT",    callWait)
                     _svcState.update { it.copy(appelMasqueEnabled = appelMasque, callWaitEnabled = callWait) }
-                    return@launch
                 }
+            } catch (_: Exception) { loadStoredStates() }
+
+            // ── Ranati subscription state ──────────────────────────────────────
+            try {
+                val ranatiResp = api.checkRanatiSubscription(auth, msisdn)
+                val ranatiActive = when {
+                    ranatiResp.code() == 404 -> false
+                    ranatiResp.isSuccessful  -> {
+                        // data is non-null and not an empty collection/object → subscribed
+                        val body = ranatiResp.body()?.data
+                        body != null && body.toString().let { it != "null" && it != "[]" && it != "{}" }
+                    }
+                    else -> null   // unknown — don't change UI
+                }
+                if (ranatiActive != null) _svcState.update { it.copy(ranatiActive = ranatiActive) }
             } catch (_: Exception) { }
-            loadStoredStates()
         }
     }
 
@@ -176,12 +192,12 @@ class NetworkServicesViewModel(application: android.app.Application) : AndroidVi
             val msisdn = tokenStorage.msisdn.firstOrNull()
                 ?: run { _state.value = NetworkUiState.Error("انتهت الجلسة"); return@launch }
             try {
-                api.checkRanatiSubscription("Bearer $token", msisdn)
                 val resp = api.deleteRanati(
                     "Bearer $token", msisdn,
                     RanatiDeleteBody(RanatiDeleteData(id = msisdn))
                 )
                 if (resp.isSuccessful || resp.code() in 200..204) {
+                    _svcState.update { it.copy(ranatiActive = false) }
                     _state.value = NetworkUiState.Success
                 } else {
                     val ar = Regex(""""ar"\s*:\s*"([^"]+)"""").find(resp.errorBody()?.string() ?: "")?.groupValues?.get(1) ?: ""
@@ -330,14 +346,17 @@ fun SettingsScreen(navController: NavController, netVm: NetworkServicesViewModel
                 onClick   = { netVm.toggleService("CALLWAIT") }
             )
 
-            // Ranati disable
-            SettingsItem(
-                icon       = Icons.Outlined.MusicOff,
-                label      = "تعطيل رناتي (RBT)",
-                subtitle   = "إلغاء نغمة الرد المخصصة",
-                isLoading  = netState is NetworkUiState.Loading,
-                labelColor = Error.copy(alpha = 0.8f),
-                onClick    = { showRanatiConfirm = true }
+            // Ranati smart toggle — button label & action depend on subscription state
+            RanatiToggleItem(
+                ranatiActive = svcState.ranatiActive,
+                isLoading    = netState is NetworkUiState.Loading,
+                onClick = {
+                    when (svcState.ranatiActive) {
+                        true  -> showRanatiConfirm = true          // subscribed → offer to disable
+                        false -> { /* not subscribed — inform user */ }
+                        null  -> netVm.loadNetworkServicesFromApi() // still loading → refresh
+                    }
+                }
             )
 
             Spacer(Modifier.height(4.dp))
@@ -503,5 +522,64 @@ private fun SettingsItem(
             CircularProgressIndicator(Modifier.size(18.dp), color = Primary, strokeWidth = 2.dp)
         else
             Icon(Icons.Outlined.ChevronRight, null, tint = TextHint, modifier = Modifier.size(18.dp))
+    }
+}
+
+// ── Ranati toggle item ────────────────────────────────────────────────────────
+// ranatiActive: true = subscribed (can disable), false = not subscribed, null = loading
+
+@Composable
+private fun RanatiToggleItem(
+    ranatiActive: Boolean?,
+    isLoading: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(SurfaceVariant)
+            .clickable(enabled = !isLoading, onClick = onClick)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Icon(
+            if (ranatiActive == true) Icons.Outlined.MusicNote else Icons.Outlined.MusicOff,
+            contentDescription = null,
+            tint = if (ranatiActive == true) Primary else TextSecondary,
+            modifier = Modifier.size(22.dp)
+        )
+        Column(Modifier.weight(1f)) {
+            Text(
+                "رناتي (نغمة الرد)",
+                style = MaterialTheme.typography.bodyLarge,
+                color = TextPrimary
+            )
+            Text(
+                when (ranatiActive) {
+                    true  -> "اضغط لإلغاء الاشتراك"
+                    false -> "غير مشترك في رناتي"
+                    null  -> "جارٍ التحقق..."
+                },
+                style = MaterialTheme.typography.labelMedium,
+                color = TextSecondary
+            )
+        }
+        when {
+            isLoading || ranatiActive == null ->
+                CircularProgressIndicator(Modifier.size(18.dp), color = Primary, strokeWidth = 2.dp)
+            else -> {
+                val (badge, color) = if (ranatiActive)
+                    "مفعّل" to Success
+                else
+                    "غير مشترك" to TextHint
+                Text(badge,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = color,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
     }
 }
