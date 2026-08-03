@@ -23,7 +23,6 @@ import com.boykta.net.data.api.ApiClient
 import com.boykta.net.data.local.TokenStorage
 import com.boykta.net.data.models.BipSmsBalanceData
 import com.boykta.net.data.models.BipSmsRequest
-import com.boykta.net.data.models.MgmInviteRequest
 import com.boykta.net.ui.components.ErrorModal
 import com.boykta.net.ui.components.SuccessModal
 import com.boykta.net.ui.theme.*
@@ -52,14 +51,6 @@ class FreeSmsViewModel(application: android.app.Application) : AndroidViewModel(
 
     fun sendBip(phone: String, type: String) = callApi {
         api.sendBipSms("Bearer $it", tokenStorage.msisdn.firstOrNull() ?: "", BipSmsRequest(toMsisdn(phone), type))
-    }
-
-    fun sendMgmInvite(phone: String) = callApi {
-        api.sendMgmInvitation("Bearer $it", tokenStorage.msisdn.firstOrNull() ?: "", MgmInviteRequest(toMsisdn(phone)))
-    }
-
-    fun activateMgmReward() = callApi {
-        api.activateMgmReward("Bearer $it", tokenStorage.msisdn.firstOrNull() ?: "")
     }
 
     fun checkBipBalance() {
@@ -108,13 +99,11 @@ fun FreeSmsScreen(navController: NavController, vm: FreeSmsViewModel = viewModel
     val uiState  by vm.state.collectAsState()
     val balance  by vm.balance.collectAsState()
 
-    var selectedTab  by remember { mutableIntStateOf(0) }
-    var phone        by remember { mutableStateOf("") }
-    var showSuccess  by remember { mutableStateOf(false) }
-    var showError    by remember { mutableStateOf(false) }
-    var errorMsg     by remember { mutableStateOf("") }
+    var phone       by remember { mutableStateOf("") }
+    var showSuccess by remember { mutableStateOf(false) }
+    var showError   by remember { mutableStateOf(false) }
+    var errorMsg    by remember { mutableStateOf("") }
 
-    // Load balance on first open
     LaunchedEffect(Unit) { vm.checkBipBalance() }
 
     LaunchedEffect(uiState) {
@@ -131,107 +120,88 @@ fun FreeSmsScreen(navController: NavController, vm: FreeSmsViewModel = viewModel
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("الخدمات المجانية", style = MaterialTheme.typography.titleMedium) },
+                title = {
+                    Text("رسائل مجانية", style = MaterialTheme.typography.titleMedium)
+                },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.Outlined.ArrowBack, contentDescription = "رجوع", tint = TextPrimary)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Background, titleContentColor = TextPrimary)
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Background,
+                    titleContentColor = TextPrimary
+                )
             )
         },
         containerColor = Background
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            TabRow(selectedTabIndex = selectedTab, containerColor = Background, contentColor = Primary) {
-                Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
-                    Text("كلمني / فليكسيلي", Modifier.padding(12.dp))
-                }
-                Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
-                    Text("دعوات MGM", Modifier.padding(12.dp))
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+
+            // ── Balance chip ──────────────────────────────────────────────────
+            if (balance != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(SurfaceVariant, RoundedCornerShape(10.dp))
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "كلمني المتبقية: ${balance!!.callMeRemaining ?: "--"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
+                    Text(
+                        "فليكسيلي المتبقية: ${balance!!.flexyLiRemaining ?: "--"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
                 }
             }
 
-            Column(
-                Modifier.fillMaxSize().padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
+            // ── Receiver input ────────────────────────────────────────────────
+            AppTextField(
+                value         = phone,
+                onValueChange = { phone = it },
+                label         = "رقم المستلم",
+                placeholder   = "07XXXXXXXX",
+                keyboardType  = KeyboardType.Phone,
+                enabled       = uiState !is SmsUiState.Loading
+            )
 
-                // ── Bip-SMS balance chip ──────────────────────────────────
-                if (selectedTab == 0 && balance != null) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(SurfaceVariant, RoundedCornerShape(10.dp))
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            "كلمني المتبقية: ${balance!!.callMeRemaining ?: "--"}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextSecondary
-                        )
-                        Text(
-                            "فليكسيلي المتبقية: ${balance!!.flexyLiRemaining ?: "--"}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextSecondary
-                        )
-                    }
+            // ── Action buttons: كلمني + فليكسيلي ─────────────────────────────
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(
+                    onClick  = { vm.sendBip(phone, "CALLME") },
+                    modifier = Modifier.weight(1f).height(52.dp),
+                    enabled  = uiState !is SmsUiState.Loading,
+                    shape    = RoundedCornerShape(12.dp),
+                    colors   = ButtonDefaults.outlinedButtonColors(contentColor = Primary)
+                ) {
+                    if (uiState is SmsUiState.Loading)
+                        CircularProgressIndicator(Modifier.size(18.dp), color = Primary, strokeWidth = 2.dp)
+                    else
+                        Text("كلمني", fontWeight = FontWeight.SemiBold)
                 }
 
-                AppTextField(
-                    value = phone, onValueChange = { phone = it },
-                    label = "رقم المستلم", placeholder = "07XXXXXXXX",
-                    keyboardType = KeyboardType.Phone,
-                    enabled = uiState !is SmsUiState.Loading
-                )
-
-                if (selectedTab == 0) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedButton(
-                            onClick = { vm.sendBip(phone, "CALLME") },
-                            modifier = Modifier.weight(1f).height(48.dp),
-                            enabled = uiState !is SmsUiState.Loading,
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Primary)
-                        ) { Text("كلمني", fontWeight = FontWeight.SemiBold) }
-
-                        Button(
-                            onClick = { vm.sendBip(phone, "FLEXYLI") },
-                            modifier = Modifier.weight(1f).height(48.dp),
-                            enabled = uiState !is SmsUiState.Loading,
-                            colors = ButtonDefaults.buttonColors(containerColor = Primary, contentColor = OnPrimary),
-                            shape = RoundedCornerShape(10.dp)
-                        ) { Text("فليكسيلي", fontWeight = FontWeight.SemiBold) }
-                    }
-                } else {
-                    Button(
-                        onClick = { vm.sendMgmInvite(phone) },
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
-                        enabled = uiState !is SmsUiState.Loading,
-                        colors = ButtonDefaults.buttonColors(containerColor = Primary, contentColor = OnPrimary),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        if (uiState is SmsUiState.Loading)
-                            CircularProgressIndicator(Modifier.size(20.dp), color = OnPrimary, strokeWidth = 2.dp)
-                        else Text("إرسال دعوة", fontWeight = FontWeight.SemiBold)
-                    }
-
-                    HorizontalDivider(color = Border)
-
-                    Button(
-                        onClick = { vm.activateMgmReward() },
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
-                        enabled = uiState !is SmsUiState.Loading,
-                        colors = ButtonDefaults.buttonColors(containerColor = SurfaceVariant, contentColor = Primary),
-                        shape = RoundedCornerShape(12.dp)
-                    ) { Text("تفعيل مكافأة الدعوة", fontWeight = FontWeight.SemiBold) }
-                }
-
-                if (uiState is SmsUiState.Loading) {
-                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = Primary)
-                    }
+                Button(
+                    onClick  = { vm.sendBip(phone, "FLEXYLI") },
+                    modifier = Modifier.weight(1f).height(52.dp),
+                    enabled  = uiState !is SmsUiState.Loading,
+                    colors   = ButtonDefaults.buttonColors(containerColor = Primary, contentColor = OnPrimary),
+                    shape    = RoundedCornerShape(12.dp)
+                ) {
+                    if (uiState is SmsUiState.Loading)
+                        CircularProgressIndicator(Modifier.size(18.dp), color = OnPrimary, strokeWidth = 2.dp)
+                    else
+                        Text("فليكسيلي", fontWeight = FontWeight.SemiBold)
                 }
             }
         }

@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.boykta.net.data.api.ApiClient
+import com.boykta.net.data.local.SavedAccount
 import com.boykta.net.data.local.TokenStorage
 import com.boykta.net.data.models.*
 import kotlinx.coroutines.async
@@ -29,19 +30,38 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private val _uiState = MutableStateFlow(DashboardUiState())
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
 
-    init { loadAll() }
+    private val _accounts = MutableStateFlow<List<SavedAccount>>(emptyList())
+    val accounts: StateFlow<List<SavedAccount>> = _accounts.asStateFlow()
+
+    init {
+        loadAccounts()
+        loadAll()
+    }
+
+    fun loadAccounts() {
+        viewModelScope.launch {
+            _accounts.value = tokenStorage.getAllAccounts()
+        }
+    }
+
+    fun switchAccount(msisdn: String) {
+        viewModelScope.launch {
+            val switched = tokenStorage.switchAccount(msisdn)
+            if (switched) loadAll()
+        }
+    }
 
     fun loadAll() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
 
-            var token       = ""
-            var msisdn      = ""
+            var token        = ""
+            var msisdn       = ""
             var phoneDisplay = ""
             var accountName  = ""
 
-            tokenStorage.accessToken.firstOrNull()?.let  { token       = it }
-            tokenStorage.msisdn.firstOrNull()?.let       { msisdn      = it }
+            tokenStorage.accessToken.firstOrNull()?.let  { token        = it }
+            tokenStorage.msisdn.firstOrNull()?.let       { msisdn       = it }
             tokenStorage.phoneDisplay.firstOrNull()?.let { phoneDisplay = it }
             tokenStorage.accountName.firstOrNull()?.let  { accountName  = it }
 
@@ -53,7 +73,6 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             val auth = "Bearer $token"
 
             try {
-                // Fire all three requests in parallel
                 val balanceDeferred  = async { api.getMainBalance(auth, msisdn) }
                 val productsDeferred = async { api.getProductBalances(auth, msisdn) }
                 val historyDeferred  = async { api.getSubscriptionHistory(auth, msisdn) }
@@ -62,8 +81,6 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 val productsResp = productsDeferred.await()
                 val historyResp  = historyDeferred.await()
 
-                // Real API response: { data: { products: [...] } }
-                // (Old flat list was wrong — use ConnectedProductsData wrapper)
                 val products = productsResp.body()?.data?.products ?: emptyList()
 
                 _uiState.update { state ->
@@ -77,8 +94,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                         msisdn              = msisdn
                     )
                 }
+                // Refresh accounts list after loading
+                _accounts.value = tokenStorage.getAllAccounts()
             } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, errorMessage = "تعذّر تحميل البيانات. اسحب للتحديث.") }
+                _uiState.update { it.copy(isLoading = false, errorMessage = "تعذّر تحميل البيانات.") }
             }
         }
     }

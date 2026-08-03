@@ -5,7 +5,9 @@ import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -27,6 +29,7 @@ import com.boykta.net.data.models.NetworkServiceRequest
 import com.boykta.net.data.models.RanatiDeleteBody
 import com.boykta.net.data.models.RanatiDeleteData
 import com.boykta.net.navigation.Screen
+import com.boykta.net.ui.components.ConfirmModal
 import com.boykta.net.ui.components.ErrorModal
 import com.boykta.net.ui.components.SuccessModal
 import com.boykta.net.ui.theme.*
@@ -34,7 +37,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
-// ── Inline ViewModel for network services and Ranati ─────────────────────────
+// ── ViewModel ─────────────────────────────────────────────────────────────────
 
 sealed class NetworkUiState {
     object Idle    : NetworkUiState()
@@ -43,6 +46,12 @@ sealed class NetworkUiState {
     data class Error(val message: String) : NetworkUiState()
 }
 
+data class NetworkServiceState(
+    val appelMasqueEnabled: Boolean? = null,  // null = unknown
+    val callWaitEnabled: Boolean?   = null,
+    val isLoading: Boolean          = false
+)
+
 class NetworkServicesViewModel(application: android.app.Application) : AndroidViewModel(application) {
     private val tokenStorage = TokenStorage(application)
     private val api = ApiClient.api
@@ -50,24 +59,74 @@ class NetworkServicesViewModel(application: android.app.Application) : AndroidVi
     private val _state = MutableStateFlow<NetworkUiState>(NetworkUiState.Idle)
     val state: StateFlow<NetworkUiState> = _state.asStateFlow()
 
+    private val _svcState = MutableStateFlow(NetworkServiceState())
+    val svcState: StateFlow<NetworkServiceState> = _svcState.asStateFlow()
+
+    init { loadStoredStates() }
+
+    private fun loadStoredStates() {
+        viewModelScope.launch {
+            val stored = tokenStorage.getNetworkServiceStates()
+            _svcState.update {
+                it.copy(
+                    appelMasqueEnabled = stored["APPELMASQUE"],
+                    callWaitEnabled    = stored["CALLWAIT"]
+                )
+            }
+        }
+    }
+
     /**
      * Toggle a network service.
-     * serviceId: "APPELMASQUE" | "CALLWAIT"
-     * action:    "ACTIVATE" | "DEACTIVATE"
+     * If current state is known, send the opposite action.
+     * If unknown, attempt ACTIVATE first.
      */
-    fun toggleService(serviceId: String, action: String) {
+    fun toggleService(serviceId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             _state.value = NetworkUiState.Loading
-            val token  = tokenStorage.accessToken.firstOrNull() ?: run { _state.value = NetworkUiState.Error("انتهت الجلسة"); return@launch }
-            val msisdn = tokenStorage.msisdn.firstOrNull() ?: run { _state.value = NetworkUiState.Error("انتهت الجلسة"); return@launch }
+            val token  = tokenStorage.accessToken.firstOrNull()
+                ?: run { _state.value = NetworkUiState.Error("انتهت الجلسة"); return@launch }
+            val msisdn = tokenStorage.msisdn.firstOrNull()
+                ?: run { _state.value = NetworkUiState.Error("انتهت الجلسة"); return@launch }
+
+            val currentEnabled = when (serviceId) {
+                "APPELMASQUE" -> _svcState.value.appelMasqueEnabled
+                "CALLWAIT"    -> _svcState.value.callWaitEnabled
+                else          -> null
+            }
+            // If currently enabled → DEACTIVATE, else → ACTIVATE
+            val action = if (currentEnabled == true) "DEACTIVATE" else "ACTIVATE"
+
             try {
                 val resp = api.toggleNetworkService(
                     "Bearer $token", msisdn,
                     NetworkServiceRequest(serviceId = serviceId, action = action)
                 )
                 if (resp.isSuccessful || resp.code() in 200..201) {
+                    val newEnabled = action == "ACTIVATE"
+                    tokenStorage.setNetworkServiceState(serviceId, newEnabled)
+                    when (serviceId) {
+                        "APPELMASQUE" -> _svcState.update { it.copy(appelMasqueEnabled = newEnabled) }
+                        "CALLWAIT"    -> _svcState.update { it.copy(callWaitEnabled    = newEnabled) }
+                    }
                     _state.value = NetworkUiState.Success
                 } else {
+                    // If ACTIVATE returned error, maybe it was already ON — try DEACTIVATE
+                    if (action == "ACTIVATE") {
+                        val resp2 = api.toggleNetworkService(
+                            "Bearer $token", msisdn,
+                            NetworkServiceRequest(serviceId = serviceId, action = "DEACTIVATE")
+                        )
+                        if (resp2.isSuccessful || resp2.code() in 200..201) {
+                            tokenStorage.setNetworkServiceState(serviceId, false)
+                            when (serviceId) {
+                                "APPELMASQUE" -> _svcState.update { it.copy(appelMasqueEnabled = false) }
+                                "CALLWAIT"    -> _svcState.update { it.copy(callWaitEnabled    = false) }
+                            }
+                            _state.value = NetworkUiState.Success
+                            return@launch
+                        }
+                    }
                     val ar = Regex(""""ar"\s*:\s*"([^"]+)"""").find(resp.errorBody()?.string() ?: "")?.groupValues?.get(1) ?: ""
                     _state.value = NetworkUiState.Error(ar.ifBlank { "فشلت العملية (${resp.code()})" })
                 }
@@ -75,19 +134,15 @@ class NetworkServicesViewModel(application: android.app.Application) : AndroidVi
         }
     }
 
-    /**
-     * Disable the Ranati (RBT) ring-back tone subscription.
-     * Step 1: GET to check subscription. Step 2: DELETE to unsubscribe.
-     */
     fun disableRanati() {
         viewModelScope.launch(Dispatchers.IO) {
             _state.value = NetworkUiState.Loading
-            val token  = tokenStorage.accessToken.firstOrNull() ?: run { _state.value = NetworkUiState.Error("انتهت الجلسة"); return@launch }
-            val msisdn = tokenStorage.msisdn.firstOrNull() ?: run { _state.value = NetworkUiState.Error("انتهت الجلسة"); return@launch }
+            val token  = tokenStorage.accessToken.firstOrNull()
+                ?: run { _state.value = NetworkUiState.Error("انتهت الجلسة"); return@launch }
+            val msisdn = tokenStorage.msisdn.firstOrNull()
+                ?: run { _state.value = NetworkUiState.Error("انتهت الجلسة"); return@launch }
             try {
-                // Check subscription first
                 api.checkRanatiSubscription("Bearer $token", msisdn)
-                // Then delete
                 val resp = api.deleteRanati(
                     "Bearer $token", msisdn,
                     RanatiDeleteBody(RanatiDeleteData(id = msisdn))
@@ -110,19 +165,17 @@ class NetworkServicesViewModel(application: android.app.Application) : AndroidVi
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(navController: NavController, netVm: NetworkServicesViewModel = viewModel()) {
-    val context = LocalContext.current
+    val context      = LocalContext.current
     val tokenStorage = remember { TokenStorage(context) }
-    val scope = rememberCoroutineScope()
-    val netState by netVm.state.collectAsState()
+    val scope        = rememberCoroutineScope()
+    val netState     by netVm.state.collectAsState()
+    val svcState     by netVm.svcState.collectAsState()
 
-    var showLogoutConfirm  by remember { mutableStateOf(false) }
-    var showNetworkDialog  by remember { mutableStateOf(false) }
-    var selectedServiceId  by remember { mutableStateOf("") }
-    var selectedServiceLbl by remember { mutableStateOf("") }
-    var showRanatiConfirm  by remember { mutableStateOf(false) }
-    var showSuccess        by remember { mutableStateOf(false) }
-    var showError          by remember { mutableStateOf(false) }
-    var errorMsg           by remember { mutableStateOf("") }
+    var showLogoutConfirm by remember { mutableStateOf(false) }
+    var showRanatiConfirm by remember { mutableStateOf(false) }
+    var showSuccess       by remember { mutableStateOf(false) }
+    var showError         by remember { mutableStateOf(false) }
+    var errorMsg          by remember { mutableStateOf("") }
 
     val accountName  by tokenStorage.accountName.collectAsState(initial = "")
     val phoneDisplay by tokenStorage.phoneDisplay.collectAsState(initial = "")
@@ -138,64 +191,30 @@ fun SettingsScreen(navController: NavController, netVm: NetworkServicesViewModel
     if (showSuccess) SuccessModal { showSuccess = false; netVm.reset() }
     if (showError)   ErrorModal(errorMsg) { showError = false; netVm.reset() }
 
-    // ── Logout confirm ──────────────────────────────────────────────────────
+    // ── Logout confirm ────────────────────────────────────────────────────────
     if (showLogoutConfirm) {
-        AlertDialog(
-            onDismissRequest = { showLogoutConfirm = false },
-            title = { Text("تسجيل الخروج", color = TextPrimary) },
-            text  = { Text("هل تريد حذف هذا الرقم وتسجيل الخروج؟", color = TextSecondary) },
-            confirmButton = {
-                TextButton(onClick = {
-                    scope.launch {
-                        tokenStorage.clearToken()
-                        navController.navigate(Screen.Auth.route) {
-                            popUpTo(Screen.Dashboard.route) { inclusive = true }
-                        }
+        ConfirmModal(
+            title    = "تسجيل الخروج",
+            subtitle = "هل تريد حذف هذا الرقم وتسجيل الخروج؟",
+            onConfirm = {
+                scope.launch {
+                    tokenStorage.removeAccount(tokenStorage.msisdn.firstOrNull() ?: "")
+                    navController.navigate(Screen.Auth.route) {
+                        popUpTo(Screen.Dashboard.route) { inclusive = true }
                     }
-                }) { Text("نعم، خروج", color = Error) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showLogoutConfirm = false }) { Text("إلغاء", color = TextSecondary) }
-            },
-            containerColor = CardBg
-        )
-    }
-
-    // ── Network service toggle dialog ────────────────────────────────────────
-    if (showNetworkDialog) {
-        AlertDialog(
-            onDismissRequest = { showNetworkDialog = false },
-            title = { Text(selectedServiceLbl, color = TextPrimary) },
-            text  = { Text("اختر الإجراء المطلوب:", color = TextSecondary) },
-            confirmButton = {
-                TextButton(onClick = { showNetworkDialog = false; netVm.toggleService(selectedServiceId, "ACTIVATE") }) {
-                    Text("تفعيل", color = Primary)
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { showNetworkDialog = false; netVm.toggleService(selectedServiceId, "DEACTIVATE") }) {
-                    Text("تعطيل", color = Error)
-                }
-            },
-            containerColor = CardBg
+            onDismiss = { showLogoutConfirm = false }
         )
     }
 
     // ── Ranati disable confirm ────────────────────────────────────────────────
     if (showRanatiConfirm) {
-        AlertDialog(
-            onDismissRequest = { showRanatiConfirm = false },
-            title = { Text("تعطيل رناتي", color = TextPrimary) },
-            text  = { Text("هل أنت متأكد من إلغاء اشتراك رناتي؟ ستتوقف نغمة الرد الخاصة بك.", color = TextSecondary) },
-            confirmButton = {
-                TextButton(onClick = { showRanatiConfirm = false; netVm.disableRanati() }) {
-                    Text("نعم، إلغاء الاشتراك", color = Error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showRanatiConfirm = false }) { Text("إلغاء", color = TextSecondary) }
-            },
-            containerColor = CardBg
+        ConfirmModal(
+            title    = "تعطيل رناتي",
+            subtitle = "هل أنت متأكد من إلغاء اشتراك رناتي؟ ستتوقف نغمة الرد الخاصة بك.",
+            onConfirm = { showRanatiConfirm = false; netVm.disableRanati() },
+            onDismiss = { showRanatiConfirm = false }
         )
     }
 
@@ -214,10 +233,14 @@ fun SettingsScreen(navController: NavController, netVm: NetworkServicesViewModel
         containerColor = Background
     ) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // ── Account card ──────────────────────────────────────────────
+            // ── Account card ──────────────────────────────────────────────────
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = CardBg),
@@ -234,10 +257,15 @@ fun SettingsScreen(navController: NavController, netVm: NetworkServicesViewModel
                             .background(Primary.copy(alpha = 0.15f), RoundedCornerShape(22.dp)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Outlined.Person, contentDescription = null, tint = Primary)
+                        Icon(Icons.Outlined.Person, null, tint = Primary)
                     }
                     Column {
-                        Text(accountName ?: "—", style = MaterialTheme.typography.titleMedium, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            accountName ?: "—",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = TextPrimary,
+                            fontWeight = FontWeight.SemiBold
+                        )
                         Text(phoneDisplay ?: "—", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
                     }
                 }
@@ -245,45 +273,42 @@ fun SettingsScreen(navController: NavController, netVm: NetworkServicesViewModel
 
             Spacer(Modifier.height(4.dp))
 
-            // ── Network services ──────────────────────────────────────────
+            // ── Network services ──────────────────────────────────────────────
             Text("خدمات الشبكة", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
 
-            SettingsItem(
-                icon = Icons.Outlined.VisibilityOff,
-                label = "إخفاء رقمك (APPELMASQUE)",
-                subtitle = "إخفاء رقمك عند الاتصال",
+            // APPELMASQUE smart toggle
+            SmartToggleItem(
+                icon      = Icons.Outlined.VisibilityOff,
+                label     = "إخفاء رقمك (APPELMASQUE)",
+                subtitle  = "إخفاء رقمك عند الاتصال",
+                enabled   = svcState.appelMasqueEnabled,
                 isLoading = netState is NetworkUiState.Loading,
-                onClick = {
-                    selectedServiceId  = "APPELMASQUE"
-                    selectedServiceLbl = "إخفاء رقمك"
-                    showNetworkDialog  = true
-                }
+                onClick   = { netVm.toggleService("APPELMASQUE") }
             )
 
-            SettingsItem(
-                icon = Icons.Outlined.CallSplit,
-                label = "الانتظار المزدوج (CALLWAIT)",
-                subtitle = "الرد على مكالمة أثناء مكالمة أخرى",
+            // CALLWAIT smart toggle
+            SmartToggleItem(
+                icon      = Icons.Outlined.CallSplit,
+                label     = "الانتظار المزدوج (CALLWAIT)",
+                subtitle  = "الرد على مكالمة أثناء مكالمة أخرى",
+                enabled   = svcState.callWaitEnabled,
                 isLoading = netState is NetworkUiState.Loading,
-                onClick = {
-                    selectedServiceId  = "CALLWAIT"
-                    selectedServiceLbl = "الانتظار المزدوج"
-                    showNetworkDialog  = true
-                }
+                onClick   = { netVm.toggleService("CALLWAIT") }
             )
 
+            // Ranati disable
             SettingsItem(
-                icon = Icons.Outlined.MusicOff,
-                label = "تعطيل رناتي (RBT)",
-                subtitle = "إلغاء نغمة الرد المخصصة",
-                isLoading = netState is NetworkUiState.Loading,
+                icon       = Icons.Outlined.MusicOff,
+                label      = "تعطيل رناتي (RBT)",
+                subtitle   = "إلغاء نغمة الرد المخصصة",
+                isLoading  = netState is NetworkUiState.Loading,
                 labelColor = Error.copy(alpha = 0.8f),
-                onClick = { showRanatiConfirm = true }
+                onClick    = { showRanatiConfirm = true }
             )
 
             Spacer(Modifier.height(4.dp))
 
-            // ── General ───────────────────────────────────────────────────
+            // ── General ───────────────────────────────────────────────────────
             Text("عام", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
 
             SettingsItem(
@@ -301,18 +326,14 @@ fun SettingsScreen(navController: NavController, netVm: NetworkServicesViewModel
             SettingsItem(
                 icon = Icons.Outlined.Policy,
                 label = "سياسة الخصوصية",
-                onClick = {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.facebook.com/boyktanet")))
-                }
+                onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.facebook.com/boyktanet"))) }
             )
 
             SettingsItem(
                 icon = Icons.Outlined.Code,
                 label = "المطور",
                 subtitle = "facebook.com/boyktanet",
-                onClick = {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.facebook.com/boyktanet")))
-                }
+                onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.facebook.com/boyktanet"))) }
             )
 
             Spacer(Modifier.height(4.dp))
@@ -324,9 +345,69 @@ fun SettingsScreen(navController: NavController, netVm: NetworkServicesViewModel
                 labelColor = Error,
                 onClick = { showLogoutConfirm = true }
             )
+
+            Spacer(Modifier.height(24.dp))
         }
     }
 }
+
+// ── Smart toggle item (shows ON/OFF state) ─────────────────────────────────────
+
+@Composable
+private fun SmartToggleItem(
+    icon: ImageVector,
+    label: String,
+    subtitle: String,
+    enabled: Boolean?,       // null = unknown
+    isLoading: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(SurfaceVariant)
+            .clickable(enabled = !isLoading, onClick = onClick)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = if (enabled == true) Primary else TextSecondary,
+            modifier = Modifier.size(22.dp)
+        )
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.bodyLarge, color = TextPrimary)
+            Text(subtitle, style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+        }
+        when {
+            isLoading -> CircularProgressIndicator(Modifier.size(18.dp), color = Primary, strokeWidth = 2.dp)
+            else -> {
+                // State badge
+                val stateText = when (enabled) {
+                    true  -> "مفعّل"
+                    false -> "معطّل"
+                    null  -> "اضغط"
+                }
+                val stateColor = when (enabled) {
+                    true  -> Success
+                    false -> Error.copy(alpha = 0.8f)
+                    null  -> TextHint
+                }
+                Text(
+                    stateText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = stateColor,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+    }
+}
+
+// ── Generic settings item ─────────────────────────────────────────────────────
 
 @Composable
 private fun SettingsItem(
@@ -361,6 +442,6 @@ private fun SettingsItem(
         if (isLoading)
             CircularProgressIndicator(Modifier.size(18.dp), color = Primary, strokeWidth = 2.dp)
         else
-            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = TextHint, modifier = Modifier.size(18.dp))
+            Icon(Icons.Outlined.ChevronRight, null, tint = TextHint, modifier = Modifier.size(18.dp))
     }
 }

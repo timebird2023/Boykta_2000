@@ -9,4 +9,5 @@ sealed class Screen(val route: String) {
     object FreeSms   : Screen("free_sms")
     object WalkWin   : Screen("walk_win")
     object Settings  : Screen("settings")
+    object Mgm       : Screen("mgm")
 }

@@ -41,5 +41,9 @@ fun NavGraph(navController: NavHostController) {
         composable(Screen.Settings.route) {
             SettingsScreen(navController = navController)
         }
+
+        composable(Screen.Mgm.route) {
+            MgmScreen(navController = navController)
+        }
     }
 }

@@ -23,6 +23,13 @@ data class FlexyHistoryState(
     val isLoading: Boolean = false
 )
 
+/** Internet data packages available for transfer. */
+enum class DataPackage(val label: String, val packageCode: String) {
+    MB500("500 ميجابايت", "TransferInternet500Mo"),
+    GB1  ("1 جيجابايت",   "TransferInternet1Go"),
+    GB2  ("2 جيجابايت",   "TransferInternet2Go")
+}
+
 class FlexyViewModel(application: Application) : AndroidViewModel(application) {
 
     private val tokenStorage = TokenStorage(application)
@@ -59,15 +66,12 @@ class FlexyViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun transferCredit(receiverPhone: String, amount: String, pin: String) {
-        val msisdnB = receiverPhone.filter { it.isDigit() }.let {
-            if (it.startsWith("0")) "213${it.drop(1)}" else it
-        }.toLongOrNull() ?: run {
+        val msisdnB = normalizeToLong(receiverPhone) ?: run {
             _actionState.value = FlexyUiState.Error("رقم المستلم غير صحيح"); return
         }
         val amountD = amount.toDoubleOrNull() ?: run {
             _actionState.value = FlexyUiState.Error("المبلغ غير صحيح"); return
         }
-
         viewModelScope.launch(Dispatchers.IO) {
             _actionState.value = FlexyUiState.Loading
             val token  = tokenStorage.accessToken.firstOrNull() ?: return@launch
@@ -82,13 +86,10 @@ class FlexyViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun transferData(receiverPhone: String) {
-        val msisdnB = receiverPhone.filter { it.isDigit() }.let {
-            if (it.startsWith("0")) "213${it.drop(1)}" else it
-        }.toLongOrNull() ?: run {
+    fun transferData(receiverPhone: String, pkg: DataPackage = DataPackage.GB1) {
+        val msisdnB = normalizeToLong(receiverPhone) ?: run {
             _actionState.value = FlexyUiState.Error("رقم المستلم غير صحيح"); return
         }
-
         viewModelScope.launch(Dispatchers.IO) {
             _actionState.value = FlexyUiState.Loading
             val token  = tokenStorage.accessToken.firstOrNull() ?: return@launch
@@ -96,7 +97,7 @@ class FlexyViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val resp = api.transferData(
                     "Bearer $token", msisdn,
-                    FlexyDataRequest(msisdnB, "TransferInternet1Go")
+                    FlexyDataRequest(msisdnB, pkg.packageCode)
                 )
                 handleResponse(resp)
             } catch (e: Exception) { _actionState.value = FlexyUiState.Error("تعذّر الاتصال بالخادم.") }
@@ -113,9 +114,14 @@ class FlexyViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun extractAr(json: String): String {
-        return Regex(""""ar"\s*:\s*"([^"]+)"""").find(json)?.groupValues?.get(1) ?: ""
+    private fun normalizeToLong(phone: String): Long? {
+        val d = phone.filter { it.isDigit() }
+        val msisdn = if (d.startsWith("0")) "213${d.drop(1)}" else if (d.startsWith("213")) d else "213$d"
+        return msisdn.toLongOrNull()
     }
+
+    private fun extractAr(json: String): String =
+        Regex(""""ar"\s*:\s*"([^"]+)"""").find(json)?.groupValues?.get(1) ?: ""
 
     fun resetState() { _actionState.value = FlexyUiState.Idle }
 }
