@@ -1,5 +1,6 @@
 package com.boykta.net.data.api
 
+import com.boykta.net.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.logging.HttpLoggingInterceptor
@@ -25,20 +26,25 @@ object ApiClient {
             .addInterceptor { chain ->
                 val original: Request = chain.request()
                 val request = original.newBuilder()
-                    .header("User-Agent",       "MobileApp/3.0.6")
-                    .header("Accept",           "application/json")
-                    .header("Accept-Language",  "ar")
-                    .header("Accept-Encoding",  "gzip")
-                    .header("Content-Type",     "application/json")
+                    .header("User-Agent",      "MobileApp/3.0.6")
+                    .header("Accept",          "application/json")
+                    .header("Accept-Language", "ar")
+                    .header("Accept-Encoding", "gzip")
+                    // NOTE: Do NOT set Content-Type here — OkHttp sets it automatically:
+                    //   @FormUrlEncoded → application/x-www-form-urlencoded
+                    //   @Body (JSON)    → application/json
+                    // Overriding it globally breaks the OAuth form-encoded endpoints.
                     .method(original.method, original.body)
                     .build()
                 chain.proceed(request)
             }
-            // Logging only in debug builds — stripped by ProGuard in release
+            // Logging only in debug builds — stripped by R8 in release
             .also { builder ->
-                val logging = HttpLoggingInterceptor()
-                logging.level = HttpLoggingInterceptor.Level.BODY
-                builder.addInterceptor(logging)
+                if (BuildConfig.DEBUG) {
+                    val logging = HttpLoggingInterceptor()
+                    logging.level = HttpLoggingInterceptor.Level.BODY
+                    builder.addInterceptor(logging)
+                }
             }
             .build()
     }

@@ -75,7 +75,7 @@ fun DashboardScreen(navController: NavController, vm: DashboardViewModel = viewM
 
                     // Active packages
                     if (state.productBalances.isNotEmpty()) {
-                        Divider(color = Border, thickness = 0.5.dp, modifier = Modifier.padding(vertical = 6.dp))
+                        HorizontalDivider(color = Border, thickness = 0.5.dp, modifier = Modifier.padding(vertical = 6.dp))
                         Text("الباقات النشطة", style = MaterialTheme.typography.labelMedium)
                         state.productBalances.forEach { p ->
                             Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
@@ -86,7 +86,7 @@ fun DashboardScreen(navController: NavController, vm: DashboardViewModel = viewM
                     }
 
                     // History accordion
-                    Divider(color = Border, thickness = 0.5.dp, modifier = Modifier.padding(vertical = 6.dp))
+                    HorizontalDivider(color = Border, thickness = 0.5.dp, modifier = Modifier.padding(vertical = 6.dp))
                     Row(
                         Modifier.fillMaxWidth().clickable { historyExpanded = !historyExpanded },
                         Arrangement.SpaceBetween,

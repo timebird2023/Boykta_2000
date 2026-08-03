@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -49,7 +50,11 @@ fun AuthScreen(navController: NavController, vm: AuthViewModel = viewModel()) {
                 intent.getStringExtra(SmsReceiver.EXTRA_OTP_CODE)?.let { otp = it }
             }
         }
-        context.registerReceiver(receiver, IntentFilter(SmsReceiver.ACTION_OTP_RECEIVED))
+        ContextCompat.registerReceiver(
+            context, receiver,
+            IntentFilter(SmsReceiver.ACTION_OTP_RECEIVED),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         onDispose { context.unregisterReceiver(receiver) }
     }
 
