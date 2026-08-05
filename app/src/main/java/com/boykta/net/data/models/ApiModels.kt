@@ -208,5 +208,7 @@ val PAID_OFFERS = listOf(
     PaidOffer("10", "عرض 1000دج 30Go",   "30 جيجابايت",  "1000", "شهر",     "DOVINTSPEEDMONTH15GoPRE",    "activate-product"),
     PaidOffer("11", "عرض 1500دج 60Go",   "60 جيجابايت",  "1500", "شهر",     "DOVINTSPEEDMONTH30GoPRE",    "activate-product"),
     PaidOffer("12", "عرض 2000دج 100Go",  "100 جيجابايت", "2000", "30 يوم",  "DOVINTSPEEDMONTH100GoPRE5G", "activate-product"),
-    PaidOffer("13", "عرض 4000دج 200Go",  "200 جيجابايت", "4000", "30 يوم",  "DOVINTSPEEDMONTH220GoPRE5G", "activate-product")
+    PaidOffer("13", "عرض 4000دج 200Go",  "200 جيجابايت", "4000", "30 يوم",  "DOVINTSPEEDMONTH220GoPRE5G", "activate-product"),
+    // ── من boykta.py ─────────────────────────────────────────────────────────
+    PaidOffer("14", "عرض 90دج 5Go",     "5 جيجابايت",   "90",   "24 ساعة", "BTL500MBDAY",                "shake")
 )

@@ -2,3 +2,4 @@
 - [Android gradle.properties](gradle-properties.md) — projects using AndroidX must have gradle.properties with android.useAndroidX=true and android.enableJetifier=true or the build fails.
 - [Duplicate mipmap resources](duplicate-mipmap.md) — bitmap .xml files in density-specific mipmap dirs conflict with same-name .jpg files; adaptive icon XMLs belong only in mipmap-anydpi-v26.
 - [GitHub Actions secrets setup](github-actions-secrets.md) — secrets must be encrypted with repo public key using libsodium SealedBox before PUT to API; PyNaCl works on Replit for this.
+- [Composable color in Typography](composable-color-typography.md) — never reference @Composable color accessors inside top-level Typography val; use color scheme slots instead.

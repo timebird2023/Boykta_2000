@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.boykta.net.data.api.SessionManager
 import com.boykta.net.data.receiver.SmsReceiver
 import com.boykta.net.navigation.Screen
 import com.boykta.net.ui.components.ErrorModal
@@ -55,6 +56,9 @@ fun AuthScreen(navController: NavController, vm: AuthViewModel = viewModel()) {
     var countdown   by remember { mutableIntStateOf(0) }
     var showError   by remember { mutableStateOf(false) }
     var errorMsg    by remember { mutableStateOf("") }
+
+    // ── Session-expired banner (redirect from ApiClient after failed refresh) ─
+    val sessionExpiredWarning = remember { SessionManager.consumeExpiredFlag() }
 
     // Shake animation state
     val shakeOffset   = remember { Animatable(0f) }
@@ -140,6 +144,24 @@ fun AuthScreen(navController: NavController, vm: AuthViewModel = viewModel()) {
         modifier = Modifier.fillMaxSize().background(Background),
         contentAlignment = Alignment.Center
     ) {
+        // ── Session expired notice banner ─────────────────────────────────
+        if (sessionExpiredWarning) {
+            androidx.compose.foundation.layout.Box(
+                modifier = androidx.compose.ui.Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter)
+                    .background(Error.copy(alpha = 0.12f))
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+            ) {
+                androidx.compose.material3.Text(
+                    "⚠️ انتهت صلاحية جلستك. يرجى إعادة إرسال رقمك لتوثيق الدخول من جديد.",
+                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                    color = Error,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = androidx.compose.ui.Modifier.fillMaxWidth()
+                )
+            }
+        }
         Column(
             modifier = Modifier
                 .fillMaxWidth()

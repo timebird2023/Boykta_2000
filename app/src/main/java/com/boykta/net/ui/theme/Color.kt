@@ -4,16 +4,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
-// ── Brand colors extracted from the boykta net logo ──────────────────────────
-// Cyan neon  : #00D4FF  (the glowing "BN" and circuit lines)
-// Red neon   : #FF1744  (the outer neon ring arc)
-// Dark navy  : #040D1E  (logo dark background)
-val Primary      = Color(0xFF00D4FF)  // cyan neon
-val PrimaryDark  = Color(0xFF0099BB)  // deeper cyan (used on light surfaces)
+// ── Brand palette — extracted from boykta net neon logo ──────────────────────
+val Primary      = Color(0xFF00D4FF)  // electric cyan  (BN letters glow)
+val PrimaryDark  = Color(0xFF00A3CC)  // deeper cyan for light surfaces
 val OnPrimary    = Color(0xFF000000)  // black text on cyan buttons
-val Accent       = Color(0xFFFF1744)  // red neon accent (alerts, badges)
+val Accent       = Color(0xFFFF1744)  // red neon ring arc
+val NeonBlue     = Color(0xFF0D6EFD)  // electric blue (circuit board lines)
 val Success      = Color(0xFF00E676)  // neon green
-val Error        = Color(0xFFFF1744)  // same red
+val Error        = Color(0xFFFF1744)  // same red as accent
 val Warning      = Color(0xFFFFAB00)  // amber
 
 // ── AppColors holder ──────────────────────────────────────────────────────────
@@ -29,29 +27,29 @@ data class AppColors(
     val isDark: Boolean
 )
 
-// ── Dark theme — mirrors the logo's black/navy canvas with cyan glow ──────────
+// ── DARK theme — matches the icon's deep navy-black canvas with neon glow ─────
 val DarkAppColors = AppColors(
-    background     = Color(0xFF000000),   // pure black (logo outer bg)
-    surface        = Color(0xFF060C18),   // deep navy (logo inner field)
-    surfaceVariant = Color(0xFF0D1625),   // slightly lighter navy
-    cardBg         = Color(0xFF091020),   // card background
-    border         = Color(0xFF1A2A45),   // subtle navy border
-    textPrimary    = Color(0xFFFFFFFF),   // white
-    textSecondary  = Color(0xFF00D4FF),   // cyan — for subtitles / labels
-    textHint       = Color(0xFF3A5070),   // muted navy-grey hint
+    background     = Color(0xFF05091A),  // deep navy-black (icon outer field)
+    surface        = Color(0xFF080E22),  // slightly lighter navy
+    surfaceVariant = Color(0xFF0D1530),  // card variant
+    cardBg         = Color(0xFF0A1228),  // cards
+    border         = Color(0xFF162040),  // subtle navy border with blue tint
+    textPrimary    = Color(0xFFECF4FF),  // almost white with cool blue tint
+    textSecondary  = Color(0xFF7BBFDA),  // muted cyan-grey
+    textHint       = Color(0xFF2C4060),  // dim navy hint
     isDark         = true
 )
 
-// ── Light theme — icy white palette derived from brand cyan ──────────────────
+// ── LIGHT theme — icy arctic palette derived from brand cyan ─────────────────
 val LightAppColors = AppColors(
-    background     = Color(0xFFF0F8FF),   // alice blue (icy daylight)
-    surface        = Color(0xFFFFFFFF),   // pure white cards
-    surfaceVariant = Color(0xFFE3F3FF),   // very light cyan tint
+    background     = Color(0xFFEEF4FF),  // very light ice blue
+    surface        = Color(0xFFFFFFFF),
+    surfaceVariant = Color(0xFFDEEDFF),  // light cyan tint
     cardBg         = Color(0xFFFFFFFF),
-    border         = Color(0xFFB0D8F0),   // light cyan border
-    textPrimary    = Color(0xFF071525),   // near-black navy
-    textSecondary  = Color(0xFF005577),   // darker cyan for readability
-    textHint       = Color(0xFF90B8D0),   // muted cyan hint
+    border         = Color(0xFFAACCE8),  // light cyan border
+    textPrimary    = Color(0xFF060D1F),  // near-black navy
+    textSecondary  = Color(0xFF2A5070),  // readable dark cyan
+    textHint       = Color(0xFF88AABB),
     isDark         = false
 )
 
@@ -59,26 +57,11 @@ val LightAppColors = AppColors(
 val LocalAppColors = staticCompositionLocalOf { DarkAppColors }
 
 // ── @Composable color accessors ───────────────────────────────────────────────
-val Background: Color
-    @Composable get() = LocalAppColors.current.background
-
-val Surface: Color
-    @Composable get() = LocalAppColors.current.surface
-
-val SurfaceVariant: Color
-    @Composable get() = LocalAppColors.current.surfaceVariant
-
-val CardBg: Color
-    @Composable get() = LocalAppColors.current.cardBg
-
-val Border: Color
-    @Composable get() = LocalAppColors.current.border
-
-val TextPrimary: Color
-    @Composable get() = LocalAppColors.current.textPrimary
-
-val TextSecondary: Color
-    @Composable get() = LocalAppColors.current.textSecondary
-
-val TextHint: Color
-    @Composable get() = LocalAppColors.current.textHint
+val Background: Color    @Composable get() = LocalAppColors.current.background
+val Surface: Color       @Composable get() = LocalAppColors.current.surface
+val SurfaceVariant: Color @Composable get() = LocalAppColors.current.surfaceVariant
+val CardBg: Color        @Composable get() = LocalAppColors.current.cardBg
+val Border: Color        @Composable get() = LocalAppColors.current.border
+val TextPrimary: Color   @Composable get() = LocalAppColors.current.textPrimary
+val TextSecondary: Color @Composable get() = LocalAppColors.current.textSecondary
+val TextHint: Color      @Composable get() = LocalAppColors.current.textHint

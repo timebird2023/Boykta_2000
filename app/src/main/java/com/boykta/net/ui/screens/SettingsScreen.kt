@@ -2,12 +2,14 @@ package com.boykta.net.ui.screens
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
-import androidx.core.content.FileProvider
-import java.io.File
+import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -26,6 +28,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import androidx.core.content.FileProvider
+import java.io.File
 import com.boykta.net.data.api.ApiClient
 import com.boykta.net.data.local.TokenStorage
 import com.boykta.net.data.models.NetworkServiceItem
@@ -51,9 +55,9 @@ sealed class NetworkUiState {
 }
 
 data class NetworkServiceState(
-    val appelMasqueEnabled: Boolean? = null,  // null = unknown
+    val appelMasqueEnabled: Boolean? = null,
     val callWaitEnabled: Boolean?    = null,
-    val ranatiActive: Boolean?       = null,  // null = still loading
+    val ranatiActive: Boolean?       = null,
     val isLoading: Boolean           = false
 )
 
@@ -69,17 +73,14 @@ class NetworkServicesViewModel(application: android.app.Application) : AndroidVi
 
     init { loadNetworkServicesFromApi() }
 
-    /**
-     * Fetches actual network service states from the server.
-     * Falls back to locally-cached values if the call fails.
-     */
     fun loadNetworkServicesFromApi() {
         viewModelScope.launch(Dispatchers.IO) {
+            _svcState.update { it.copy(isLoading = true) }
             val token  = tokenStorage.accessToken.firstOrNull() ?: run { loadStoredStates(); return@launch }
             val msisdn = tokenStorage.msisdn.firstOrNull() ?: run { loadStoredStates(); return@launch }
             val auth   = "Bearer $token"
 
-            // ── Network services (APPELMASQUE / CALLWAIT) ──────────────────────
+            // ── Network services (APPELMASQUE / CALLWAIT) ─────────────────────
             try {
                 val resp = api.getNetworkServices(auth, msisdn)
                 if (resp.isSuccessful) {
@@ -99,20 +100,21 @@ class NetworkServicesViewModel(application: android.app.Application) : AndroidVi
                 }
             } catch (_: Exception) { loadStoredStates() }
 
-            // ── Ranati subscription state ──────────────────────────────────────
+            // ── Ranati subscription state ─────────────────────────────────────
             try {
                 val ranatiResp = api.checkRanatiSubscription(auth, msisdn)
                 val ranatiActive = when {
                     ranatiResp.code() == 404 -> false
                     ranatiResp.isSuccessful  -> {
-                        // data is non-null and not an empty collection/object → subscribed
                         val body = ranatiResp.body()?.data
                         body != null && body.toString().let { it != "null" && it != "[]" && it != "{}" }
                     }
-                    else -> null   // unknown — don't change UI
+                    else -> null
                 }
                 if (ranatiActive != null) _svcState.update { it.copy(ranatiActive = ranatiActive) }
             } catch (_: Exception) { }
+
+            _svcState.update { it.copy(isLoading = false) }
         }
     }
 
@@ -122,17 +124,13 @@ class NetworkServicesViewModel(application: android.app.Application) : AndroidVi
             _svcState.update {
                 it.copy(
                     appelMasqueEnabled = stored["APPELMASQUE"],
-                    callWaitEnabled    = stored["CALLWAIT"]
+                    callWaitEnabled    = stored["CALLWAIT"],
+                    isLoading          = false
                 )
             }
         }
     }
 
-    /**
-     * Toggle a network service.
-     * Recordings confirm body: {"code":"APPELMASQUE","activate":true/false}
-     * If current state is known → send opposite; if unknown → attempt activate first.
-     */
     fun toggleService(serviceId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             _state.value = NetworkUiState.Loading
@@ -146,7 +144,6 @@ class NetworkServicesViewModel(application: android.app.Application) : AndroidVi
                 "CALLWAIT"    -> _svcState.value.callWaitEnabled
                 else          -> null
             }
-            // If currently enabled → deactivate; else → activate
             val newActivate = currentEnabled != true
 
             try {
@@ -162,7 +159,6 @@ class NetworkServicesViewModel(application: android.app.Application) : AndroidVi
                     }
                     _state.value = NetworkUiState.Success
                 } else {
-                    // If activate failed, maybe it was already ON — try the opposite
                     if (newActivate) {
                         val resp2 = api.toggleNetworkService(
                             "Bearer $token", msisdn,
@@ -243,7 +239,6 @@ fun SettingsScreen(navController: NavController, netVm: NetworkServicesViewModel
     if (showSuccess) SuccessModal { showSuccess = false; netVm.reset() }
     if (showError)   ErrorModal(errorMsg) { showError = false; netVm.reset() }
 
-    // ── Logout confirm ────────────────────────────────────────────────────────
     if (showLogoutConfirm) {
         ConfirmModal(
             title    = "تسجيل الخروج",
@@ -260,7 +255,6 @@ fun SettingsScreen(navController: NavController, netVm: NetworkServicesViewModel
         )
     }
 
-    // ── Ranati disable confirm ────────────────────────────────────────────────
     if (showRanatiConfirm) {
         ConfirmModal(
             title    = "تعطيل رناتي",
@@ -295,9 +289,9 @@ fun SettingsScreen(navController: NavController, netVm: NetworkServicesViewModel
             // ── Account card ──────────────────────────────────────────────────
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = CardBg),
-                shape = RoundedCornerShape(14.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Border)
+                colors   = CardDefaults.cardColors(containerColor = CardBg),
+                shape    = RoundedCornerShape(14.dp),
+                border   = BorderStroke(1.dp, Border)
             ) {
                 Row(
                     modifier = Modifier.padding(16.dp).fillMaxWidth(),
@@ -326,47 +320,38 @@ fun SettingsScreen(navController: NavController, netVm: NetworkServicesViewModel
             Spacer(Modifier.height(4.dp))
 
             // ── Network services ──────────────────────────────────────────────
-            Text("خدمات الشبكة", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            SectionHeader("خدمات الشبكة")
 
-            // APPELMASQUE smart toggle
             SmartToggleItem(
                 icon      = Icons.Outlined.VisibilityOff,
-                label     = "إخفاء رقمك (APPELMASQUE)",
-                subtitle  = "إخفاء رقمك عند الاتصال",
+                label     = "إخفاء رقمك",
+                subtitle  = "APPELMASQUE — يخفي رقمك عند الاتصال",
                 enabled   = svcState.appelMasqueEnabled,
-                isLoading = netState is NetworkUiState.Loading,
+                isLoading = svcState.isLoading || netState is NetworkUiState.Loading,
                 onClick   = { netVm.toggleService("APPELMASQUE") }
             )
 
-            // CALLWAIT smart toggle
             SmartToggleItem(
                 icon      = Icons.Outlined.CallSplit,
-                label     = "الانتظار المزدوج (CALLWAIT)",
-                subtitle  = "الرد على مكالمة أثناء مكالمة أخرى",
+                label     = "الانتظار المزدوج",
+                subtitle  = "CALLWAIT — الرد على مكالمة أثناء أخرى",
                 enabled   = svcState.callWaitEnabled,
-                isLoading = netState is NetworkUiState.Loading,
+                isLoading = svcState.isLoading || netState is NetworkUiState.Loading,
                 onClick   = { netVm.toggleService("CALLWAIT") }
             )
 
-            // Ranati smart toggle — button label & action depend on subscription state
-            RanatiToggleItem(
+            // ── Ranati card (improved) ─────────────────────────────────────────
+            RanatiCard(
                 ranatiActive = svcState.ranatiActive,
-                isLoading    = netState is NetworkUiState.Loading,
-                onClick = {
-                    when (svcState.ranatiActive) {
-                        true  -> showRanatiConfirm = true          // subscribed → offer to disable
-                        false -> { /* not subscribed — inform user */ }
-                        null  -> netVm.loadNetworkServicesFromApi() // still loading → refresh
-                    }
-                }
+                isLoading    = svcState.isLoading,
+                onDisable    = { showRanatiConfirm = true },
+                onRefresh    = { netVm.loadNetworkServicesFromApi() }
             )
-
-            Spacer(Modifier.height(4.dp))
 
             Spacer(Modifier.height(4.dp))
 
             // ── المظهر ────────────────────────────────────────────────────────
-            Text("المظهر", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            SectionHeader("المظهر")
 
             SmartToggleItem(
                 icon      = if (isDarkTheme) Icons.Outlined.DarkMode else Icons.Outlined.LightMode,
@@ -379,8 +364,7 @@ fun SettingsScreen(navController: NavController, netVm: NetworkServicesViewModel
 
             Spacer(Modifier.height(4.dp))
 
-            // ── General ───────────────────────────────────────────────────────
-            Text("عام", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            SectionHeader("عام")
 
             SettingsItem(
                 icon = Icons.Outlined.Share,
@@ -409,7 +393,6 @@ fun SettingsScreen(navController: NavController, netVm: NetworkServicesViewModel
                             }
                             context.startActivity(Intent.createChooser(shareIntent, "مشاركة التطبيق"))
                         } catch (_: Exception) {
-                            // Fallback: share as link
                             val fallback = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
                                 putExtra(Intent.EXTRA_TEXT, "تطبيق boykta net — خدمات جيزي بسهولة\nhttps://www.facebook.com/boyktanet")
@@ -423,7 +406,7 @@ fun SettingsScreen(navController: NavController, netVm: NetworkServicesViewModel
             SettingsItem(
                 icon = Icons.Outlined.Policy,
                 label = "سياسة الخصوصية",
-                onClick = { navController.navigate(com.boykta.net.navigation.Screen.PrivacyPolicy.route) }
+                onClick = { navController.navigate(Screen.PrivacyPolicy.route) }
             )
 
             SettingsItem(
@@ -434,7 +417,7 @@ fun SettingsScreen(navController: NavController, netVm: NetworkServicesViewModel
             )
 
             Spacer(Modifier.height(4.dp))
-            Text("الحساب", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            SectionHeader("الحساب")
 
             SettingsItem(
                 icon = Icons.Outlined.Logout,
@@ -448,14 +431,188 @@ fun SettingsScreen(navController: NavController, netVm: NetworkServicesViewModel
     }
 }
 
-// ── Smart toggle item (shows ON/OFF state) ─────────────────────────────────────
+// ── Section header ────────────────────────────────────────────────────────────
+
+@Composable
+private fun SectionHeader(title: String) {
+    Text(
+        title,
+        style = MaterialTheme.typography.labelMedium,
+        color = TextSecondary,
+        modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
+    )
+}
+
+// ── Ranati card (full redesign) ───────────────────────────────────────────────
+
+@Composable
+private fun RanatiCard(
+    ranatiActive: Boolean?,
+    isLoading: Boolean,
+    onDisable: () -> Unit,
+    onRefresh: () -> Unit
+) {
+    val isActive = ranatiActive == true
+
+    // Pulsing glow animation when active
+    val infiniteTransition = rememberInfiniteTransition(label = "ranati_pulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.5f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            tween(900, easing = FastOutSlowInEasing),
+            RepeatMode.Reverse
+        ),
+        label = "pulse"
+    )
+
+    val borderColor = when {
+        isLoading        -> Border
+        isActive         -> Primary.copy(alpha = 0.6f)
+        ranatiActive == false -> Border
+        else             -> Border
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors   = CardDefaults.cardColors(
+            containerColor = if (isActive) Primary.copy(alpha = 0.07f) else CardBg
+        ),
+        shape  = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, borderColor)
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // ── Header row ────────────────────────────────────────────────────
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Icon with glow
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(
+                            if (isActive) Primary.copy(alpha = 0.18f) else SurfaceVariant,
+                            CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        if (isActive) Icons.Outlined.MusicNote else Icons.Outlined.MusicOff,
+                        contentDescription = null,
+                        tint = if (isActive) Primary else TextSecondary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "رناتي (نغمة الرد)",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = TextPrimary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        when (ranatiActive) {
+                            true  -> "مشترك في رناتي • اضغط للإلغاء"
+                            false -> "غير مشترك في رناتي"
+                            null  -> "جارٍ التحقق من الحالة..."
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (isActive) Primary.copy(alpha = 0.8f) else TextSecondary
+                    )
+                }
+
+                // Status badge / loader
+                when {
+                    isLoading || ranatiActive == null ->
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = Primary, strokeWidth = 2.dp
+                        )
+                    isActive -> {
+                        // Pulsing "مفعّل" badge
+                        Box(
+                            modifier = Modifier
+                                .background(
+                                    Success.copy(alpha = pulseAlpha * 0.18f),
+                                    RoundedCornerShape(20.dp)
+                                )
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Box(
+                                    Modifier
+                                        .size(6.dp)
+                                        .background(Success.copy(alpha = pulseAlpha), CircleShape)
+                                )
+                                Text(
+                                    "مفعّل",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Success,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                    else ->
+                        Text(
+                            "غير مشترك",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextHint,
+                            fontWeight = FontWeight.Medium
+                        )
+                }
+            }
+
+            // ── Action buttons ────────────────────────────────────────────────
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Refresh button (always visible)
+                OutlinedButton(
+                    onClick  = onRefresh,
+                    enabled  = !isLoading,
+                    modifier = Modifier.weight(1f).height(38.dp),
+                    shape    = RoundedCornerShape(10.dp),
+                    colors   = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary),
+                    border   = BorderStroke(1.dp, Border)
+                ) {
+                    Icon(Icons.Outlined.Refresh, null, Modifier.size(15.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("تحديث", style = MaterialTheme.typography.labelMedium)
+                }
+
+                // Disable button — only visible when active
+                if (isActive) {
+                    Button(
+                        onClick  = onDisable,
+                        enabled  = !isLoading,
+                        modifier = Modifier.weight(2f).height(38.dp),
+                        shape    = RoundedCornerShape(10.dp),
+                        colors   = ButtonDefaults.buttonColors(
+                            containerColor = Error.copy(alpha = 0.85f),
+                            contentColor   = Color.White
+                        )
+                    ) {
+                        Icon(Icons.Outlined.Cancel, null, Modifier.size(15.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("إلغاء الاشتراك", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── Smart toggle item ─────────────────────────────────────────────────────────
 
 @Composable
 private fun SmartToggleItem(
     icon: ImageVector,
     label: String,
     subtitle: String,
-    enabled: Boolean?,       // null = unknown
+    enabled: Boolean?,
     isLoading: Boolean,
     onClick: () -> Unit
 ) {
@@ -463,42 +620,54 @@ private fun SmartToggleItem(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(SurfaceVariant)
+            .background(
+                if (enabled == true) Primary.copy(alpha = 0.08f) else SurfaceVariant
+            )
+            .border(
+                1.dp,
+                if (enabled == true) Primary.copy(alpha = 0.4f) else Border,
+                RoundedCornerShape(12.dp)
+            )
             .clickable(enabled = !isLoading, onClick = onClick)
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Icon(
-            icon,
-            contentDescription = null,
-            tint = if (enabled == true) Primary else TextSecondary,
-            modifier = Modifier.size(22.dp)
-        )
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .background(
+                    if (enabled == true) Primary.copy(alpha = 0.15f) else SurfaceVariant,
+                    RoundedCornerShape(18.dp)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                icon, contentDescription = null,
+                tint = if (enabled == true) Primary else TextSecondary,
+                modifier = Modifier.size(18.dp)
+            )
+        }
         Column(Modifier.weight(1f)) {
-            Text(label, style = MaterialTheme.typography.bodyLarge, color = TextPrimary)
+            Text(label,    style = MaterialTheme.typography.bodyLarge,  color = TextPrimary)
             Text(subtitle, style = MaterialTheme.typography.labelMedium, color = TextSecondary)
         }
         when {
             isLoading -> CircularProgressIndicator(Modifier.size(18.dp), color = Primary, strokeWidth = 2.dp)
             else -> {
-                // State badge
-                val stateText = when (enabled) {
-                    true  -> "مفعّل"
-                    false -> "معطّل"
-                    null  -> "اضغط"
-                }
+                val stateText = when (enabled) { true -> "مفعّل"; false -> "معطّل"; null -> "؟" }
                 val stateColor = when (enabled) {
                     true  -> Success
                     false -> Error.copy(alpha = 0.8f)
                     null  -> TextHint
                 }
-                Text(
-                    stateText,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = stateColor,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Box(
+                    modifier = Modifier
+                        .background(stateColor.copy(alpha = 0.12f), RoundedCornerShape(20.dp))
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                ) {
+                    Text(stateText, style = MaterialTheme.typography.labelSmall, color = stateColor, fontWeight = FontWeight.Bold)
+                }
             }
         }
     }
@@ -511,8 +680,6 @@ private fun SettingsItem(
     icon: ImageVector,
     label: String,
     subtitle: String? = null,
-    // Color.Unspecified = default (TextPrimary text, TextSecondary icon)
-    // Any other color = used for both icon tint and label (e.g. Error for destructive actions)
     labelColor: Color = Color.Unspecified,
     isLoading: Boolean = false,
     onClick: () -> Unit
@@ -528,15 +695,9 @@ private fun SettingsItem(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Icon(
-            icon,
-            contentDescription = null,
-            tint = if (isDefault) TextSecondary else labelColor,
-            modifier = Modifier.size(22.dp)
-        )
+        Icon(icon, null, tint = if (isDefault) TextSecondary else labelColor, modifier = Modifier.size(22.dp))
         Column(Modifier.weight(1f)) {
-            Text(label, style = MaterialTheme.typography.bodyLarge,
-                color = if (isDefault) TextPrimary else labelColor)
+            Text(label, style = MaterialTheme.typography.bodyLarge, color = if (isDefault) TextPrimary else labelColor)
             if (subtitle != null)
                 Text(subtitle, style = MaterialTheme.typography.labelMedium, color = TextSecondary)
         }
@@ -544,64 +705,5 @@ private fun SettingsItem(
             CircularProgressIndicator(Modifier.size(18.dp), color = Primary, strokeWidth = 2.dp)
         else
             Icon(Icons.Outlined.ChevronRight, null, tint = TextHint, modifier = Modifier.size(18.dp))
-    }
-}
-
-// ── Ranati toggle item ────────────────────────────────────────────────────────
-// ranatiActive: true = subscribed (can disable), false = not subscribed, null = loading
-
-@Composable
-private fun RanatiToggleItem(
-    ranatiActive: Boolean?,
-    isLoading: Boolean,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(SurfaceVariant)
-            .clickable(enabled = !isLoading, onClick = onClick)
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        Icon(
-            if (ranatiActive == true) Icons.Outlined.MusicNote else Icons.Outlined.MusicOff,
-            contentDescription = null,
-            tint = if (ranatiActive == true) Primary else TextSecondary,
-            modifier = Modifier.size(22.dp)
-        )
-        Column(Modifier.weight(1f)) {
-            Text(
-                "رناتي (نغمة الرد)",
-                style = MaterialTheme.typography.bodyLarge,
-                color = TextPrimary
-            )
-            Text(
-                when (ranatiActive) {
-                    true  -> "اضغط لإلغاء الاشتراك"
-                    false -> "غير مشترك في رناتي"
-                    null  -> "جارٍ التحقق..."
-                },
-                style = MaterialTheme.typography.labelMedium,
-                color = TextSecondary
-            )
-        }
-        when {
-            isLoading || ranatiActive == null ->
-                CircularProgressIndicator(Modifier.size(18.dp), color = Primary, strokeWidth = 2.dp)
-            else -> {
-                val (badge, color) = if (ranatiActive)
-                    "مفعّل" to Success
-                else
-                    "غير مشترك" to TextHint
-                Text(badge,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = color,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-        }
     }
 }
