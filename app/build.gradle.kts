@@ -66,19 +66,8 @@ android {
         }
     }
 
-    // ABI splits — one lightweight APK per CPU architecture
-    // armeabi-v7a  → older/32-bit Android devices (Galaxy J, A-series older)
-    // arm64-v8a    → all modern 64-bit Android devices (recommended)
-    // x86_64       → emulators and Intel Chromebooks running Android
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("armeabi-v7a", "arm64-v8a")   // x86_64 removed — emulators only, not needed
-            isUniversalApk = false
-        }
-    }
-
+    // Universal APK — single file covering arm64-v8a (modern 64-bit) + armeabi-v7a (older 32-bit)
+    // ABI splits disabled: one APK for all devices
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

@@ -1,4 +1,4 @@
-name: Android CI — Build & Sign APKs
+name: Android CI — Build & Sign APK
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    name: Build Release APKs (arm64-v8a + armeabi-v7a)
+    name: Build Universal Release APK (arm64-v8a + armeabi-v7a)
     runs-on: ubuntu-latest
 
     steps:
@@ -50,15 +50,15 @@ jobs:
           keyPassword=$KEY_PASSWORD
           EOF
 
-      # ── 6. Build release APKs ────────────────────────────────────────────────
-      - name: Build release APKs (ABI split)
+      # ── 6. Build universal release APK ───────────────────────────────────────
+      - name: Build universal release APK
         run: ./gradlew assembleRelease --no-daemon --stacktrace
 
-      # ── 7. Collect APK artifacts ─────────────────────────────────────────────
-      - name: Upload APKs
+      # ── 7. Upload APK artifact ───────────────────────────────────────────────
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: boykta-net-release-apks
+          name: boykta-net-release
           path: app/build/outputs/apk/release/*.apk
           retention-days: 14
 
