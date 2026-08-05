@@ -34,6 +34,8 @@ import com.boykta.net.data.api.ApiClient
 import com.boykta.net.data.local.TokenStorage
 import com.boykta.net.data.models.NetworkServiceItem
 import com.boykta.net.data.models.NetworkServiceRequest
+import com.boykta.net.data.models.RanatiActivateBody
+import com.boykta.net.data.models.RanatiActivateItem
 import com.boykta.net.data.models.RanatiDeleteBody
 import com.boykta.net.data.models.RanatiDeleteData
 import com.boykta.net.navigation.Screen
@@ -81,6 +83,7 @@ class NetworkServicesViewModel(application: android.app.Application) : AndroidVi
             val auth   = "Bearer $token"
 
             // ── Network services (APPELMASQUE / CALLWAIT) ─────────────────────
+            // API returns: { "data": [ {"id":"APPELMASQUE","isActive":false}, ... ] }
             try {
                 val resp = api.getNetworkServices(auth, msisdn)
                 if (resp.isSuccessful) {
@@ -88,8 +91,8 @@ class NetworkServicesViewModel(application: android.app.Application) : AndroidVi
                     var appelMasque: Boolean? = null
                     var callWait: Boolean? = null
                     for (item in items) {
-                        val active = item.status?.uppercase() == "ACTIVE"
-                        when (item.code?.uppercase()) {
+                        val active = item.isActive == true
+                        when (item.id?.uppercase()) {
                             "APPELMASQUE" -> appelMasque = active
                             "CALLWAIT"    -> callWait    = active
                         }
@@ -101,13 +104,19 @@ class NetworkServicesViewModel(application: android.app.Application) : AndroidVi
             } catch (_: Exception) { loadStoredStates() }
 
             // ── Ranati subscription state ─────────────────────────────────────
+            // Confirmed path: data.relationships.rbt-subscriptions.data
+            //   [] = not subscribed, [...] = subscribed
             try {
                 val ranatiResp = api.checkRanatiSubscription(auth, msisdn)
                 val ranatiActive = when {
                     ranatiResp.code() == 404 -> false
                     ranatiResp.isSuccessful  -> {
-                        val body = ranatiResp.body()?.data
-                        body != null && body.toString().let { it != "null" && it != "[]" && it != "{}" }
+                        val rbtData = ranatiResp.body()
+                            ?.data
+                            ?.relationships
+                            ?.rbtSubscriptions
+                            ?.data
+                        rbtData != null && rbtData.isNotEmpty()
                     }
                     else -> null
                 }
@@ -181,6 +190,29 @@ class NetworkServicesViewModel(application: android.app.Application) : AndroidVi
         }
     }
 
+    fun enableRanati() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _state.value = NetworkUiState.Loading
+            val token  = tokenStorage.accessToken.firstOrNull()
+                ?: run { _state.value = NetworkUiState.Error("انتهت الجلسة"); return@launch }
+            val msisdn = tokenStorage.msisdn.firstOrNull()
+                ?: run { _state.value = NetworkUiState.Error("انتهت الجلسة"); return@launch }
+            try {
+                val resp = api.subscribeRanati(
+                    "Bearer $token", msisdn,
+                    RanatiActivateBody(listOf(RanatiActivateItem(id = msisdn)))
+                )
+                if (resp.isSuccessful || resp.code() in 200..204) {
+                    _svcState.update { it.copy(ranatiActive = true) }
+                    _state.value = NetworkUiState.Success
+                } else {
+                    val ar = Regex(""""ar"\s*:\s*"([^"]+)"""").find(resp.errorBody()?.string() ?: "")?.groupValues?.get(1) ?: ""
+                    _state.value = NetworkUiState.Error(ar.ifBlank { "فشل تفعيل رناتي (${resp.code()})" })
+                }
+            } catch (e: Exception) { _state.value = NetworkUiState.Error("تعذّر الاتصال بالخادم.") }
+        }
+    }
+
     fun disableRanati() {
         viewModelScope.launch(Dispatchers.IO) {
             _state.value = NetworkUiState.Loading
@@ -218,11 +250,12 @@ fun SettingsScreen(navController: NavController, netVm: NetworkServicesViewModel
     val netState     by netVm.state.collectAsState()
     val svcState     by netVm.svcState.collectAsState()
 
-    var showLogoutConfirm by remember { mutableStateOf(false) }
-    var showRanatiConfirm by remember { mutableStateOf(false) }
-    var showSuccess       by remember { mutableStateOf(false) }
-    var showError         by remember { mutableStateOf(false) }
-    var errorMsg          by remember { mutableStateOf("") }
+    var showLogoutConfirm        by remember { mutableStateOf(false) }
+    var showRanatiDisableConfirm by remember { mutableStateOf(false) }
+    var showRanatiEnableConfirm  by remember { mutableStateOf(false) }
+    var showSuccess              by remember { mutableStateOf(false) }
+    var showError                by remember { mutableStateOf(false) }
+    var errorMsg                 by remember { mutableStateOf("") }
 
     val accountName  by tokenStorage.accountName.collectAsState(initial = "")
     val phoneDisplay by tokenStorage.phoneDisplay.collectAsState(initial = "")
@@ -255,12 +288,21 @@ fun SettingsScreen(navController: NavController, netVm: NetworkServicesViewModel
         )
     }
 
-    if (showRanatiConfirm) {
+    if (showRanatiDisableConfirm) {
         ConfirmModal(
-            title    = "تعطيل رناتي",
+            title    = "إلغاء رناتي",
             subtitle = "هل أنت متأكد من إلغاء اشتراك رناتي؟ ستتوقف نغمة الرد الخاصة بك.",
-            onConfirm = { showRanatiConfirm = false; netVm.disableRanati() },
-            onDismiss = { showRanatiConfirm = false }
+            onConfirm = { showRanatiDisableConfirm = false; netVm.disableRanati() },
+            onDismiss = { showRanatiDisableConfirm = false }
+        )
+    }
+
+    if (showRanatiEnableConfirm) {
+        ConfirmModal(
+            title    = "تفعيل رناتي",
+            subtitle = "هل تريد تفعيل خدمة رناتي (نغمة الرد)؟",
+            onConfirm = { showRanatiEnableConfirm = false; netVm.enableRanati() },
+            onDismiss = { showRanatiEnableConfirm = false }
         )
     }
 
@@ -340,11 +382,12 @@ fun SettingsScreen(navController: NavController, netVm: NetworkServicesViewModel
                 onClick   = { netVm.toggleService("CALLWAIT") }
             )
 
-            // ── Ranati card (improved) ─────────────────────────────────────────
+            // ── Ranati card ────────────────────────────────────────────────────
             RanatiCard(
                 ranatiActive = svcState.ranatiActive,
-                isLoading    = svcState.isLoading,
-                onDisable    = { showRanatiConfirm = true },
+                isLoading    = svcState.isLoading || netState is NetworkUiState.Loading,
+                onEnable     = { showRanatiEnableConfirm  = true },
+                onDisable    = { showRanatiDisableConfirm = true },
                 onRefresh    = { netVm.loadNetworkServicesFromApi() }
             )
 
@@ -449,6 +492,7 @@ private fun SectionHeader(title: String) {
 private fun RanatiCard(
     ranatiActive: Boolean?,
     isLoading: Boolean,
+    onEnable: () -> Unit,
     onDisable: () -> Unit,
     onRefresh: () -> Unit
 ) {
@@ -458,40 +502,40 @@ private fun RanatiCard(
     val infiniteTransition = rememberInfiniteTransition(label = "ranati_pulse")
     val pulseAlpha by infiniteTransition.animateFloat(
         initialValue = 0.5f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            tween(900, easing = FastOutSlowInEasing),
-            RepeatMode.Reverse
-        ),
+        animationSpec = infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "pulse"
     )
 
     val borderColor = when {
-        isLoading        -> Border
-        isActive         -> Primary.copy(alpha = 0.6f)
-        ranatiActive == false -> Border
-        else             -> Border
+        isLoading -> Border
+        isActive  -> Primary.copy(alpha = 0.6f)
+        else      -> Border
     }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors   = CardDefaults.cardColors(
-            containerColor = if (isActive) Primary.copy(alpha = 0.07f) else CardBg
+            containerColor = when {
+                isActive -> Primary.copy(alpha = 0.07f)
+                ranatiActive == false -> Accent.copy(alpha = 0.04f)
+                else -> CardBg
+            }
         ),
         shape  = RoundedCornerShape(14.dp),
         border = BorderStroke(1.dp, borderColor)
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+
             // ── Header row ────────────────────────────────────────────────────
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Icon with glow
                 Box(
                     modifier = Modifier
                         .size(40.dp)
                         .background(
-                            if (isActive) Primary.copy(alpha = 0.18f) else SurfaceVariant,
+                            if (isActive) Primary.copy(alpha = 0.18f) else Accent.copy(alpha = 0.12f),
                             CircleShape
                         ),
                     contentAlignment = Alignment.Center
@@ -499,7 +543,7 @@ private fun RanatiCard(
                     Icon(
                         if (isActive) Icons.Outlined.MusicNote else Icons.Outlined.MusicOff,
                         contentDescription = null,
-                        tint = if (isActive) Primary else TextSecondary,
+                        tint = if (isActive) Primary else Accent,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -513,63 +557,52 @@ private fun RanatiCard(
                     )
                     Text(
                         when (ranatiActive) {
-                            true  -> "مشترك في رناتي • اضغط للإلغاء"
-                            false -> "غير مشترك في رناتي"
+                            true  -> "مشترك في رناتي — نغمة الرد مفعّلة"
+                            false -> "غير مشترك — اضغط لتفعيل الخدمة"
                             null  -> "جارٍ التحقق من الحالة..."
                         },
                         style = MaterialTheme.typography.labelMedium,
-                        color = if (isActive) Primary.copy(alpha = 0.8f) else TextSecondary
+                        color = when (ranatiActive) {
+                            true  -> Primary.copy(alpha = 0.8f)
+                            false -> Accent.copy(alpha = 0.8f)
+                            null  -> TextSecondary
+                        }
                     )
                 }
 
                 // Status badge / loader
                 when {
                     isLoading || ranatiActive == null ->
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            color = Primary, strokeWidth = 2.dp
-                        )
-                    isActive -> {
-                        // Pulsing "مفعّل" badge
+                        CircularProgressIndicator(Modifier.size(20.dp), color = Primary, strokeWidth = 2.dp)
+                    isActive ->
                         Box(
                             modifier = Modifier
-                                .background(
-                                    Success.copy(alpha = pulseAlpha * 0.18f),
-                                    RoundedCornerShape(20.dp)
-                                )
+                                .background(Success.copy(alpha = pulseAlpha * 0.18f), RoundedCornerShape(20.dp))
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                Box(
-                                    Modifier
-                                        .size(6.dp)
-                                        .background(Success.copy(alpha = pulseAlpha), CircleShape)
-                                )
-                                Text(
-                                    "مفعّل",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Success,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Box(Modifier.size(6.dp).background(Success.copy(alpha = pulseAlpha), CircleShape))
+                                Text("مفعّل", style = MaterialTheme.typography.labelSmall, color = Success, fontWeight = FontWeight.Bold)
                             }
                         }
-                    }
                     else ->
-                        Text(
-                            "غير مشترك",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = TextHint,
-                            fontWeight = FontWeight.Medium
-                        )
+                        Box(
+                            modifier = Modifier
+                                .background(Accent.copy(alpha = 0.12f), RoundedCornerShape(20.dp))
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text("معطّل", style = MaterialTheme.typography.labelSmall, color = Accent, fontWeight = FontWeight.Bold)
+                        }
                 }
             }
 
             // ── Action buttons ────────────────────────────────────────────────
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Refresh button (always visible)
+
+                // Refresh (always shown)
                 OutlinedButton(
                     onClick  = onRefresh,
                     enabled  = !isLoading,
@@ -583,22 +616,40 @@ private fun RanatiCard(
                     Text("تحديث", style = MaterialTheme.typography.labelMedium)
                 }
 
-                // Disable button — only visible when active
-                if (isActive) {
-                    Button(
-                        onClick  = onDisable,
-                        enabled  = !isLoading,
-                        modifier = Modifier.weight(2f).height(38.dp),
-                        shape    = RoundedCornerShape(10.dp),
-                        colors   = ButtonDefaults.buttonColors(
-                            containerColor = Error.copy(alpha = 0.85f),
-                            contentColor   = Color.White
-                        )
-                    ) {
-                        Icon(Icons.Outlined.Cancel, null, Modifier.size(15.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("إلغاء الاشتراك", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-                    }
+                when {
+                    ranatiActive == null -> { /* unknown state — refresh only */ }
+                    isActive ->
+                        // Cancel / disable
+                        Button(
+                            onClick  = onDisable,
+                            enabled  = !isLoading,
+                            modifier = Modifier.weight(2f).height(38.dp),
+                            shape    = RoundedCornerShape(10.dp),
+                            colors   = ButtonDefaults.buttonColors(
+                                containerColor = Accent.copy(alpha = 0.85f),
+                                contentColor   = Color.White
+                            )
+                        ) {
+                            Icon(Icons.Outlined.Cancel, null, Modifier.size(15.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("إلغاء الاشتراك", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                        }
+                    else ->
+                        // Activate
+                        Button(
+                            onClick  = onEnable,
+                            enabled  = !isLoading,
+                            modifier = Modifier.weight(2f).height(38.dp),
+                            shape    = RoundedCornerShape(10.dp),
+                            colors   = ButtonDefaults.buttonColors(
+                                containerColor = Primary.copy(alpha = 0.9f),
+                                contentColor   = Color.Black
+                            )
+                        ) {
+                            Icon(Icons.Outlined.MusicNote, null, Modifier.size(15.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("تفعيل رناتي", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                        }
                 }
             }
         }

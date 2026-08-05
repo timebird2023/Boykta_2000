@@ -159,8 +159,9 @@ data class MgmInvitationServerItem(
 
 // ── Network Services ─────────────────────────────────────────────────────────
 //
-// Confirmed from Reqable recordings: body is {"code":"APPELMASQUE","activate":true/false}
-// NOT {"serviceId":...,"action":"ACTIVATE"} — that format is wrong.
+// GET /api/v1/services/network-services/{msisdn} returns:
+//   { "data": [ {"id": "APPELMASQUE", "isActive": false}, {"id": "CALLWAIT", "isActive": true} ] }
+// POST body confirmed: {"code":"APPELMASQUE","activate":bool}
 
 data class NetworkServiceRequest(
     @SerializedName("code")     val code: String,
@@ -168,17 +169,54 @@ data class NetworkServiceRequest(
 )
 
 data class NetworkServiceItem(
-    @SerializedName("code")    val code: String?,
-    @SerializedName("status")  val status: String?    // "ACTIVE" | "INACTIVE" | etc.
+    @SerializedName("id")       val id: String?,       // "APPELMASQUE" | "CALLWAIT"
+    @SerializedName("isActive") val isActive: Boolean? // true = active, false = inactive
 )
 
 // ── Ranati (RBT ring-back tone) ───────────────────────────────────────────────
+//
+// GET content/api/v1/subscribers/{msisdn}?include=rbt-subscriptions
+// Response path: data.relationships.rbt-subscriptions.data
+//   []                           → not subscribed
+//   [{"id":"...","type":"..."}]  → subscribed
+//
+// Python confirmed (boykta.py): rbt_data = r1['json']['data']['relationships']['rbt-subscriptions']['data']
 
+data class RanatiSubscriberData(
+    @SerializedName("type")          val type: String?,
+    @SerializedName("id")            val id: String?,
+    @SerializedName("relationships") val relationships: RanatiRelationships?
+)
+
+data class RanatiRelationships(
+    @SerializedName("rbt-subscriptions") val rbtSubscriptions: RbtSubscriptionRef?
+)
+
+data class RbtSubscriptionRef(
+    @SerializedName("data") val data: List<RbtSubscriptionItem>?
+)
+
+data class RbtSubscriptionItem(
+    @SerializedName("id")   val id: String?,
+    @SerializedName("type") val type: String?
+)
+
+// DELETE body (confirmed from Python)
 data class RanatiDeleteBody(
     @SerializedName("data") val data: RanatiDeleteData
 )
 
 data class RanatiDeleteData(
+    @SerializedName("type") val type: String = "rbt-subscriptions",
+    @SerializedName("id")   val id: String
+)
+
+// POST body for activating Ranati (JSON:API relationship creation)
+data class RanatiActivateBody(
+    @SerializedName("data") val data: List<RanatiActivateItem>
+)
+
+data class RanatiActivateItem(
     @SerializedName("type") val type: String = "rbt-subscriptions",
     @SerializedName("id")   val id: String
 )

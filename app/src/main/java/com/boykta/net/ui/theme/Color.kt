@@ -40,16 +40,16 @@ val DarkAppColors = AppColors(
     isDark         = true
 )
 
-// ── LIGHT theme — icy arctic palette derived from brand cyan ─────────────────
+// ── LIGHT theme — vivid arctic palette: deep navy text, stronger cyan/red contrast ──
 val LightAppColors = AppColors(
-    background     = Color(0xFFEEF4FF),  // very light ice blue
+    background     = Color(0xFFE8F2FF),  // crisp ice-blue canvas (more saturated)
     surface        = Color(0xFFFFFFFF),
-    surfaceVariant = Color(0xFFDEEDFF),  // light cyan tint
+    surfaceVariant = Color(0xFFD0E6FF),  // deeper cyan tint for cards & rows
     cardBg         = Color(0xFFFFFFFF),
-    border         = Color(0xFFAACCE8),  // light cyan border
-    textPrimary    = Color(0xFF060D1F),  // near-black navy
-    textSecondary  = Color(0xFF2A5070),  // readable dark cyan
-    textHint       = Color(0xFF88AABB),
+    border         = Color(0xFF7AAFD4),  // stronger cyan border — clearly visible
+    textPrimary    = Color(0xFF040C1E),  // near-black navy — max contrast
+    textSecondary  = Color(0xFF1A4060),  // deep slate-cyan — readable subtitle
+    textHint       = Color(0xFF6890AA),  // medium-blue hint — not washed out
     isDark         = false
 )
 

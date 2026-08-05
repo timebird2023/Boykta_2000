@@ -178,12 +178,22 @@ interface DjezzyApi {
     ): Response<ApiResponse<Any>>
 
     // ── Ranati / RBT ring-back tone ───────────────────────────────────────────
+    // GET  → data.relationships.rbt-subscriptions.data ([] = off, [...] = on)
+    // POST → create subscription (JSON:API relationship add)
+    // DELETE → remove subscription (confirmed from Python bot)
 
     @GET("content/api/v1/subscribers/{msisdn}")
     suspend fun checkRanatiSubscription(
         @Header("Authorization") auth: String,
         @Path("msisdn") msisdn: String,
         @Query("include") include: String = "rbt-subscriptions"
+    ): Response<ApiResponse<RanatiSubscriberData>>
+
+    @POST("content/api/v1/subscribers/{msisdn}/relationships/rbt-subscriptions")
+    suspend fun subscribeRanati(
+        @Header("Authorization") auth: String,
+        @Path("msisdn") msisdn: String,
+        @Body body: RanatiActivateBody
     ): Response<ApiResponse<Any>>
 
     @HTTP(method = "DELETE", path = "content/api/v1/subscribers/{msisdn}", hasBody = true)
