@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    name: Build Universal Release APK (arm64-v8a + armeabi-v7a)
+    name: Build Universal APK
     runs-on: ubuntu-latest
 
     steps:
@@ -29,40 +29,40 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # ── 4. Decode keystore from GitHub Secret ────────────────────────────────
-      - name: Decode keystore
+      # ── 4. Decode keystore if GitHub Secret exists ───────────────────────────
+      - name: Setup keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-        run: |
-          echo "$KEYSTORE_BASE64" | base64 --decode > app/release-keystore.jks
-
-      # ── 5. Write keystore.properties ─────────────────────────────────────────
-      - name: Create keystore.properties
-        env:
           KEY_ALIAS:      ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD:   ${{ secrets.KEY_PASSWORD }}
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
         run: |
-          cat > keystore.properties <<EOF
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 --decode > app/release-keystore.jks
+            cat > keystore.properties <<EOF
           storeFile=release-keystore.jks
           storePassword=$STORE_PASSWORD
           keyAlias=$KEY_ALIAS
           keyPassword=$KEY_PASSWORD
           EOF
+            echo "Release keystore configured."
+          else
+            echo "No custom release keystore secret found. Building with standard build configuration."
+          fi
 
-      # ── 6. Build universal release APK ───────────────────────────────────────
-      - name: Build universal release APK
-        run: ./gradlew assembleRelease --no-daemon --stacktrace
+      # ── 5. Build universal APK ───────────────────────────────────────────────
+      - name: Build APK
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      # ── 7. Upload APK artifact ───────────────────────────────────────────────
+      # ── 6. Upload APK artifact ───────────────────────────────────────────────
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: boykta-net-release
-          path: app/build/outputs/apk/release/*.apk
+          name: boykta-net-apk
+          path: app/build/outputs/apk/**/*.apk
           retention-days: 14
 
-      # ── 8. Clean up keystore ─────────────────────────────────────────────────
+      # ── 7. Clean up keystore ─────────────────────────────────────────────────
       - name: Clean up keystore
         if: always()
         run: |

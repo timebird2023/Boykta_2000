@@ -2,6 +2,7 @@ package com.boykta.net.ui.components
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -25,16 +26,20 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.boykta.net.ui.theme.*
 
-private const val FB_PAGE_URL = "https://www.facebook.com/boyktanet"
-private val FacebookBlue = Color(0xFF1877F2)
+private const val FB_PAGE_URL = "https://www.facebook.com/Boyktanet"
+private val FacebookBlue      = Color(0xFF1877F2)
 
 /**
  * Success modal shown after every successful API operation.
- * Includes a "متابعة الصفحة" button that opens the Facebook page.
+ * Supports custom messages while retaining page follow CTA.
  */
 @Composable
-fun SuccessModal(onDismiss: () -> Unit) {
+fun SuccessModal(
+    message: String? = null,
+    onDismiss: () -> Unit
+) {
     val context = LocalContext.current
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(dismissOnClickOutside = false)
@@ -44,7 +49,7 @@ fun SuccessModal(onDismiss: () -> Unit) {
                 .fillMaxWidth()
                 .background(CardBg, RoundedCornerShape(20.dp))
                 .border(1.dp, Primary.copy(alpha = 0.3f), RoundedCornerShape(20.dp))
-                .padding(28.dp),
+                .padding(24.dp),
             contentAlignment = Alignment.Center
         ) {
             Column(
@@ -54,7 +59,7 @@ fun SuccessModal(onDismiss: () -> Unit) {
                 // ── Glowing success icon ───────────────────────────────────────
                 Box(
                     modifier = Modifier
-                        .size(72.dp)
+                        .size(68.dp)
                         .background(
                             Brush.radialGradient(
                                 listOf(Success.copy(alpha = 0.25f), Success.copy(alpha = 0f))
@@ -67,22 +72,22 @@ fun SuccessModal(onDismiss: () -> Unit) {
                         Icons.Outlined.CheckCircle,
                         contentDescription = null,
                         tint = Success,
-                        modifier = Modifier.size(44.dp)
+                        modifier = Modifier.size(42.dp)
                     )
                 }
 
                 // ── Title ─────────────────────────────────────────────────────
                 Text(
                     "تمت العملية بنجاح! ✓",
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.titleLarge,
                     color = TextPrimary,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center
                 )
 
-                // ── Subtitle ──────────────────────────────────────────────────
+                // ── Subtitle / Message ─────────────────────────────────────────
                 Text(
-                    "تابع صفحتنا على فيسبوك ليصلك كل جديد من عروض وأكواد مجانية.",
+                    message ?: "تابع صفحتنا على فيسبوك ليصلك كل جديد من عروض وأكواد مجانية.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary,
                     textAlign = TextAlign.Center,
@@ -94,9 +99,11 @@ fun SuccessModal(onDismiss: () -> Unit) {
                 // ── Facebook page button ───────────────────────────────────────
                 Button(
                     onClick = {
-                        context.startActivity(
-                            Intent(Intent.ACTION_VIEW, Uri.parse(FB_PAGE_URL))
-                        )
+                        try {
+                            context.startActivity(
+                                Intent(Intent.ACTION_VIEW, Uri.parse(FB_PAGE_URL))
+                            )
+                        } catch (_: Exception) {}
                     },
                     modifier = Modifier.fillMaxWidth().height(46.dp),
                     colors = ButtonDefaults.buttonColors(
@@ -111,7 +118,7 @@ fun SuccessModal(onDismiss: () -> Unit) {
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text("متابعة الصفحة", fontWeight = FontWeight.SemiBold)
+                    Text("متابعة صفحتنا الرسمية", fontWeight = FontWeight.SemiBold)
                 }
 
                 // ── Dismiss button ─────────────────────────────────────────────
@@ -120,9 +127,9 @@ fun SuccessModal(onDismiss: () -> Unit) {
                     modifier = Modifier.fillMaxWidth().height(44.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Border)
+                    border = BorderStroke(1.dp, Border)
                 ) {
-                    Text("حسناً")
+                    Text("حسناً", fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -138,35 +145,40 @@ fun ErrorModal(message: String, onDismiss: () -> Unit) {
                 .fillMaxWidth()
                 .background(CardBg, RoundedCornerShape(20.dp))
                 .border(1.dp, Error.copy(alpha = 0.3f), RoundedCornerShape(20.dp))
-                .padding(28.dp),
+                .padding(24.dp),
             contentAlignment = Alignment.Center
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 ErrorIcon()
+
                 Text(
-                    "حدث خطأ",
-                    style = MaterialTheme.typography.headlineMedium,
+                    "تنبيه",
+                    style = MaterialTheme.typography.titleLarge,
                     color = Error,
+                    fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center
                 )
+
                 Text(
                     message,
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary,
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
+                    lineHeight = 20.sp
                 )
+
                 Button(
                     onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().height(44.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = SurfaceVariant,
                         contentColor   = TextPrimary
                     ),
                     shape = RoundedCornerShape(10.dp)
-                ) { Text("إغلاق") }
+                ) { Text("إغلاق", fontWeight = FontWeight.Bold) }
             }
         }
     }
@@ -186,10 +198,10 @@ fun ConfirmModal(
                 .fillMaxWidth()
                 .background(CardBg, RoundedCornerShape(20.dp))
                 .border(1.dp, Border, RoundedCornerShape(20.dp))
-                .padding(24.dp)
+                .padding(22.dp)
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(title,    style = MaterialTheme.typography.titleMedium, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+                Text(title,    style = MaterialTheme.typography.titleMedium, color = TextPrimary, fontWeight = FontWeight.Bold)
                 Text(subtitle, style = MaterialTheme.typography.bodyMedium,  color = TextSecondary)
                 Spacer(Modifier.height(4.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -197,30 +209,30 @@ fun ConfirmModal(
                         onClick  = onDismiss,
                         modifier = Modifier.weight(1f),
                         shape    = RoundedCornerShape(10.dp),
-                        colors   = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary)
+                        colors   = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary),
+                        border   = BorderStroke(1.dp, Border)
                     ) { Text("إلغاء") }
+
                     Button(
                         onClick  = onConfirm,
                         modifier = Modifier.weight(1f),
                         colors   = ButtonDefaults.buttonColors(containerColor = Primary, contentColor = OnPrimary),
                         shape    = RoundedCornerShape(10.dp)
-                    ) { Text("تأكيد", fontWeight = FontWeight.SemiBold) }
+                    ) { Text("تأكيد", fontWeight = FontWeight.Bold) }
                 }
             }
         }
     }
 }
 
-// ── Icon composables ──────────────────────────────────────────────────────────
-
 @Composable
 private fun ErrorIcon() {
     Box(
         modifier = Modifier
-            .size(56.dp)
+            .size(52.dp)
             .background(Error.copy(alpha = 0.15f), CircleShape),
         contentAlignment = Alignment.Center
     ) {
-        Text("✕", color = Error, style = MaterialTheme.typography.displayLarge)
+        Text("✕", color = Error, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
     }
 }

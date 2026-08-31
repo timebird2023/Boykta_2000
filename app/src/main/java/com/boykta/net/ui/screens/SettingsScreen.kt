@@ -219,7 +219,7 @@ fun SettingsScreen(
     var accountToRemove by remember { mutableStateOf<String?>(null) }
 
     if (!msg.isNullOrBlank()) {
-        SuccessModal(msg ?: "") { vm.clearMessages() }
+        SuccessModal(message = msg) { vm.clearMessages() }
     }
     if (!errMsg.isNullOrBlank()) {
         ErrorModal(errMsg ?: "") { vm.clearMessages() }
