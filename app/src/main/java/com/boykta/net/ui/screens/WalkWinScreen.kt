@@ -1,15 +1,14 @@
 package com.boykta.net.ui.screens
 
 import android.app.Activity
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.DirectionsRun
-import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,22 +24,18 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.boykta.net.ads.AdsManager
 import com.boykta.net.data.api.ApiClient
-import com.boykta.net.notifications.NotificationScheduler
 import com.boykta.net.data.local.TokenStorage
 import com.boykta.net.data.models.ActivateProductRequest
-import com.boykta.net.data.models.PaidOffer
 import com.boykta.net.ui.components.ConfirmModal
 import com.boykta.net.ui.components.ErrorModal
 import com.boykta.net.ui.components.SuccessModal
 import com.boykta.net.ui.theme.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import java.util.Locale
-import java.util.concurrent.TimeUnit
 
-// ── ViewModel ─────────────────────────────────────────────────────────────────
-
+// ── ViewModel for Walk & Win ──────────────────────────────────────────────────
 sealed class WalkUiState {
     object Idle    : WalkUiState()
     object Loading : WalkUiState()
@@ -52,124 +47,145 @@ class WalkWinViewModel(application: android.app.Application) : AndroidViewModel(
     private val tokenStorage = TokenStorage(application)
     private val api = ApiClient.api
 
-    private val _state = MutableStateFlow<WalkUiState>(WalkUiState.Idle)
-    val state: StateFlow<WalkUiState> = _state.asStateFlow()
+    private val _uiState = MutableStateFlow<WalkUiState>(WalkUiState.Idle)
+    val uiState: StateFlow<WalkUiState> = _uiState.asStateFlow()
 
-    /** Last activation time in ms (0 if never activated). */
-    val lastActivationMs: StateFlow<Long> = tokenStorage.walkLastActivation
+    val lastActivationTime: StateFlow<Long> = tokenStorage.walkLastActivation
         .stateIn(viewModelScope, SharingStarted.Eagerly, 0L)
 
     fun activateWalk2Gb() {
         viewModelScope.launch(Dispatchers.IO) {
-            _state.value = WalkUiState.Loading
-            val token  = tokenStorage.accessToken.firstOrNull()
-                ?: run { _state.value = WalkUiState.Error("انتهت الجلسة"); return@launch }
-            val msisdn = tokenStorage.msisdn.firstOrNull()
-                ?: run { _state.value = WalkUiState.Error("انتهت الجلسة"); return@launch }
+            _uiState.value = WalkUiState.Loading
+            val token = tokenStorage.accessToken.firstOrNull() ?: ""
+            val msisdn = tokenStorage.msisdn.firstOrNull() ?: ""
+
+            if (token.isBlank() || msisdn.isBlank()) {
+                _uiState.value = WalkUiState.Error("انتهت الجلسة. يرجى تسجيل الدخول مجدداً.")
+                return@launch
+            }
+
             val auth = "Bearer $token"
             try {
-                api.checkWalkCampaign(auth, msisdn)
+                // Pre-check campaign status
+                try { api.checkWalkCampaign(auth, msisdn) } catch (_: Exception) {}
+
                 val resp = api.activateWalkReward(auth, msisdn, ActivateProductRequest("GIFTWALKWIN2GO"))
-                if (resp.isSuccessful || resp.code() in 200..201) {
-                    tokenStorage.saveWalkActivationTime(System.currentTimeMillis())
-                    _state.value = WalkUiState.Success
+                if (resp.isSuccessful || resp.code() in 200..202) {
+                    val now = System.currentTimeMillis()
+                    tokenStorage.saveWalkActivationTime(now)
+                    _uiState.value = WalkUiState.Success
+                } else if (resp.code() == 403) {
+                    _uiState.value = WalkUiState.Error(
+                        "العرض غير متاح حالياً على خطك.\n\nوفقاً لقانون جازي (Walk & Win)، يجب تعبئة رصيد بقيمة 100 دج على الأقل وتفعيل باقة خلال الشهر للاستفادة من 2 جيجابايت المجانية أسبوعياً."
+                    )
+                } else if (resp.code() in listOf(402, 404, 405, 409)) {
+                    _uiState.value = WalkUiState.Error("لم يكتمل الأسبوع بعد منذ آخر تفعيل. يرجى الانتظار حتى انتهاء المدة.")
                 } else {
-                    val ar = Regex(""""ar"\s*:\s*"([^"]+)"""").find(resp.errorBody()?.string() ?: "")?.groupValues?.get(1) ?: ""
-                    _state.value = WalkUiState.Error(ar.ifBlank { "فشل التفعيل (${resp.code()})." })
+                    _uiState.value = WalkUiState.Error("تعذّر تفعيل الباقة (${resp.code()}). يرجى المحاولة لاحقاً.")
                 }
-            } catch (e: Exception) { _state.value = WalkUiState.Error("تعذّر الاتصال بالخادم.") }
+            } catch (e: Exception) {
+                _uiState.value = WalkUiState.Error("تعذّر الاتصال بالخادم. تحقق من اتصال الإنترنت.")
+            }
         }
     }
 
-    /** Activate the 100 DZD baseline offer so the user qualifies for Walk & Win. */
     fun activate100DzdOffer() {
         viewModelScope.launch(Dispatchers.IO) {
-            _state.value = WalkUiState.Loading
-            val token  = tokenStorage.accessToken.firstOrNull()
-                ?: run { _state.value = WalkUiState.Error("انتهت الجلسة"); return@launch }
-            val msisdn = tokenStorage.msisdn.firstOrNull()
-                ?: run { _state.value = WalkUiState.Error("انتهت الجلسة"); return@launch }
+            _uiState.value = WalkUiState.Loading
+            val token = tokenStorage.accessToken.firstOrNull() ?: ""
+            val msisdn = tokenStorage.msisdn.firstOrNull() ?: ""
+
+            if (token.isBlank() || msisdn.isBlank()) {
+                _uiState.value = WalkUiState.Error("انتهت الجلسة.")
+                return@launch
+            }
+
             try {
-                // 100 DZD / 2 GB / 24h offer — same as PAID_OFFERS entry "2"
                 val resp = api.activateProduct("Bearer $token", msisdn, ActivateProductRequest("DOVINTSPEEDDAY1GoPRE"))
-                if (resp.isSuccessful || resp.code() in 200..201) {
-                    _state.value = WalkUiState.Success
+                if (resp.isSuccessful || resp.code() in 200..202) {
+                    _uiState.value = WalkUiState.Success
+                } else if (resp.code() == 402) {
+                    _uiState.value = WalkUiState.Error("رصيدك غير كافٍ. المطلوب 100 دج على الأقل.")
                 } else {
-                    val ar = Regex(""""ar"\s*:\s*"([^"]+)"""").find(resp.errorBody()?.string() ?: "")?.groupValues?.get(1) ?: ""
-                    _state.value = WalkUiState.Error(ar.ifBlank { "فشل تفعيل العرض (${resp.code()})." })
+                    _uiState.value = WalkUiState.Error("تعذّر تفعيل عرض 100 دج (${resp.code()}).")
                 }
-            } catch (e: Exception) { _state.value = WalkUiState.Error("تعذّر الاتصال بالخادم.") }
+            } catch (e: Exception) {
+                _uiState.value = WalkUiState.Error("تعذّر الاتصال بالخادم.")
+            }
         }
     }
 
-    fun reset() { _state.value = WalkUiState.Idle }
+    fun reset() {
+        _uiState.value = WalkUiState.Idle
+    }
 }
-
-// ── Screen ────────────────────────────────────────────────────────────────────
-
-private val WEEK_MS = TimeUnit.DAYS.toMillis(7)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WalkWinScreen(navController: NavController, vm: WalkWinViewModel = viewModel()) {
-    val context        = LocalContext.current
-    val activity       = context as? Activity
-    val uiState        by vm.state.collectAsState()
-    val lastActivation by vm.lastActivationMs.collectAsState()
+fun WalkWinScreen(
+    navController: NavController,
+    vm: WalkWinViewModel = viewModel()
+) {
+    val uiState by vm.uiState.collectAsState()
+    val lastActivation by vm.lastActivationTime.collectAsState()
+    val context = LocalContext.current
+    val activity = context as? Activity
 
-    var showSuccess     by remember { mutableStateOf(false) }
-    var showError       by remember { mutableStateOf(false) }
-    var errorMsg        by remember { mutableStateOf("") }
-    var showConfirm100  by remember { mutableStateOf(false) }
+    var showSuccess by remember { mutableStateOf(false) }
+    var showError by remember { mutableStateOf(false) }
+    var errorMsg by remember { mutableStateOf("") }
+    var showConfirm100 by remember { mutableStateOf(false) }
 
-    // Live countdown — updates every second
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    // 7 days cooldown in ms
+    val sevenDaysMs = 7 * 24 * 60 * 60 * 1000L
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+
     LaunchedEffect(Unit) {
         while (true) {
-            kotlinx.coroutines.delay(1000)
+            delay(1000)
             now = System.currentTimeMillis()
         }
     }
 
-    val hasRecentActivation = lastActivation > 0 && (now - lastActivation) < WEEK_MS
-    val remainingMs = if (hasRecentActivation) WEEK_MS - (now - lastActivation) else 0L
-
-    fun formatCountdown(ms: Long): String {
-        if (ms <= 0) return "0د 0ث"
-        val days  = TimeUnit.MILLISECONDS.toDays(ms)
-        val hours = TimeUnit.MILLISECONDS.toHours(ms) % 24
-        val mins  = TimeUnit.MILLISECONDS.toMinutes(ms) % 60
-        val secs  = TimeUnit.MILLISECONDS.toSeconds(ms) % 60
-        return when {
-            days > 0  -> String.format(Locale.US, "%d يوم %02d:%02d:%02d", days, hours, mins, secs)
-            hours > 0 -> String.format(Locale.US, "%02d:%02d:%02d", hours, mins, secs)
-            else      -> String.format(Locale.US, "%02d:%02d", mins, secs)
-        }
-    }
-
-    // Ensure notification channel exists
-    LaunchedEffect(Unit) { NotificationScheduler.createChannel(context) }
+    val remainingMs = (lastActivation + sevenDaysMs) - now
+    val hasRecentActivation = lastActivation > 0 && remainingMs > 0
 
     LaunchedEffect(uiState) {
-        when (val s = uiState) {
-            is WalkUiState.Success -> {
-                showSuccess = true
-                // Schedule a local reminder 7 days from now
-                NotificationScheduler.scheduleWalkWinReminder(context)
+        when (uiState) {
+            is WalkUiState.Success -> showSuccess = true
+            is WalkUiState.Error   -> {
+                errorMsg = (uiState as WalkUiState.Error).message
+                showError = true
             }
-            is WalkUiState.Error   -> { errorMsg = s.message; showError = true }
             else -> {}
         }
     }
 
-    if (showSuccess) SuccessModal { showSuccess = false; vm.reset(); activity?.let { AdsManager.showInterstitial(it) } }
-    if (showError)   ErrorModal(errorMsg) { showError = false; vm.reset() }
+    if (showSuccess) {
+        SuccessModal(
+            message = "تم تفعيل باقة 2 جيجابايت أسبوعية بنجاح! 🥳🎉"
+        ) {
+            showSuccess = false
+            vm.reset()
+            activity?.let { AdsManager.showInterstitial(it) }
+        }
+    }
+
+    if (showError) {
+        ErrorModal(errorMsg) {
+            showError = false
+            vm.reset()
+        }
+    }
 
     if (showConfirm100) {
         ConfirmModal(
-            title    = "تفعيل عرض 100 دج",
-            subtitle = "سيتم تفعيل عرض 2 جيجابايت بقيمة 100 دج. هذا سيؤهلك للحصول على مكافأة امشِ واربح.",
-            onConfirm = { showConfirm100 = false; vm.activate100DzdOffer() },
+            title = "تفعيل عرض 100 دج",
+            subtitle = "سيتم تفعيل عرض 2 جيجابايت بقيمة 100 دج لتأهيل خطك لباقة 2 جيجابايت الأسبوعية المجانية.",
+            onConfirm = {
+                showConfirm100 = false
+                vm.activate100DzdOffer()
+            },
             onDismiss = { showConfirm100 = false }
         )
     }
@@ -177,7 +193,7 @@ fun WalkWinScreen(navController: NavController, vm: WalkWinViewModel = viewModel
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("امشِ واربح 2 جيجابايت", style = MaterialTheme.typography.titleMedium) },
+                title = { Text("امشِ واربح 2 جيجابايت", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.Outlined.ArrowBack, contentDescription = "رجوع", tint = TextPrimary)
@@ -192,38 +208,41 @@ fun WalkWinScreen(navController: NavController, vm: WalkWinViewModel = viewModel
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(24.dp)
+                .padding(20.dp)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(Modifier.height(8.dp))
-
-            // ── Icon ──────────────────────────────────────────────────────────
+            // ── Big Neon Icon ─────────────────────────────────────────────────
             Box(
                 modifier = Modifier
                     .size(96.dp)
-                    .background(Primary.copy(alpha = 0.12f), RoundedCornerShape(48.dp)),
+                    .background(Primary.copy(alpha = 0.15f), RoundedCornerShape(48.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Outlined.DirectionsRun, null, tint = Primary, modifier = Modifier.size(52.dp))
+                Icon(
+                    Icons.Outlined.DirectionsRun,
+                    null,
+                    tint = Primary,
+                    modifier = Modifier.size(52.dp)
+                )
             }
 
             Text(
                 "2 جيجابايت أسبوعية مجاناً",
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.headlineSmall,
                 color = TextPrimary,
                 textAlign = TextAlign.Center,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.ExtraBold
             )
 
-            // ── Countdown timer (if recently activated) ───────────────────────
+            // ── Countdown Timer Card ──────────────────────────────────────────
             if (hasRecentActivation) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = CardBg),
-                    shape = RoundedCornerShape(14.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Primary.copy(alpha = 0.4f))
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, Primary.copy(alpha = 0.4f))
                 ) {
                     Column(
                         Modifier.padding(20.dp),
@@ -243,7 +262,7 @@ fun WalkWinScreen(navController: NavController, vm: WalkWinViewModel = viewModel
                         }
                         Text(
                             formatCountdown(remainingMs),
-                            fontSize = 28.sp,
+                            fontSize = 26.sp,
                             fontWeight = FontWeight.Bold,
                             color = Primary
                         )
@@ -251,38 +270,53 @@ fun WalkWinScreen(navController: NavController, vm: WalkWinViewModel = viewModel
                 }
             }
 
-            // ── Info card ─────────────────────────────────────────────────────
+            // ── Instructions / Rule Card ──────────────────────────────────────
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = CardBg),
-                shape = RoundedCornerShape(14.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Border)
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, Border)
             ) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Outlined.Info, null, tint = Primary, modifier = Modifier.size(20.dp))
+                        Text(
+                            "شروط الاستفادة من الخدمة",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = TextPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
                     Text(
-                        "كيف تعمل هذه الخدمة؟",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = TextPrimary,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        "للاستفادة من 2 جيجابايت الأسبوعية المجانية، يجب عليك أولاً تفعيل عرض بقيمة 100 دج أو أكثر خلال الشهر الحالي، ثم اضغط على زر التفعيل أدناه.",
+                        "للاستفادة من 2 جيجابايت المجانية كل أسبوع، يجب تعبئة رصيد بقيمة 100 دج أو أكثر خلال الشهر وتفعيل عرض، لتفعيل الباقة المجانية مرة واحدة كل 7 أيام.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextSecondary,
                         textAlign = TextAlign.Start
                     )
-                    Text(
-                        "يمكن التفعيل مرة واحدة كل 7 أيام.",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Primary.copy(alpha = 0.8f)
-                    )
+
+                    Box(
+                        modifier = Modifier
+                            .background(Primary.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            "صلاحية الباقة: 7 أيام كاملة",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
 
-            // ── Activate 2GB button ───────────────────────────────────────────
+            // ── Main Action Button ────────────────────────────────────────────
             Button(
                 onClick  = { vm.activateWalk2Gb() },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
+                modifier = Modifier.fillMaxWidth().height(54.dp),
                 enabled  = uiState !is WalkUiState.Loading && !hasRecentActivation,
                 colors   = ButtonDefaults.buttonColors(containerColor = Primary, contentColor = OnPrimary),
                 shape    = RoundedCornerShape(14.dp)
@@ -291,37 +325,52 @@ fun WalkWinScreen(navController: NavController, vm: WalkWinViewModel = viewModel
                     CircularProgressIndicator(Modifier.size(22.dp), color = OnPrimary, strokeWidth = 2.dp)
                 else
                     Text(
-                        if (hasRecentActivation) "تم التفعيل — انتظر الأسبوع القادم"
-                        else "تفعيل 2 جيجابايت الآن",
-                        fontWeight = FontWeight.Bold
+                        if (hasRecentActivation) "تم التفعيل — انتظر انتهاء الأسبوع"
+                        else "تفعيل 2 جيجابايت مجاناً الآن",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
                     )
             }
 
-            // ── Divider ───────────────────────────────────────────────────────
-            HorizontalDivider(color = Border)
+            HorizontalDivider(color = Border.copy(alpha = 0.5f))
 
-            // ── 100 DZD shortcut ──────────────────────────────────────────────
+            // ── 100 DA Shortcut ───────────────────────────────────────────────
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    "لم تفعّل عرض 100 دج بعد؟",
+                    "لم تقم بتفعيل عرض 100 دج هذا الشهر؟",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary
                 )
                 OutlinedButton(
                     onClick  = { showConfirm100 = true },
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
                     enabled  = uiState !is WalkUiState.Loading,
                     shape    = RoundedCornerShape(12.dp),
-                    colors   = ButtonDefaults.outlinedButtonColors(contentColor = Primary)
+                    colors   = ButtonDefaults.outlinedButtonColors(contentColor = Primary),
+                    border   = BorderStroke(1.dp, Primary)
                 ) {
-                    Text("تفعيل عرض 100 دج الآن", fontWeight = FontWeight.SemiBold)
+                    Text("تفعيل عرض 100 دج الآن", fontWeight = FontWeight.Bold)
                 }
             }
 
             Spacer(Modifier.height(16.dp))
         }
+    }
+}
+
+private fun formatCountdown(ms: Long): String {
+    if (ms <= 0) return "00:00:00"
+    val days = ms / (24 * 3600 * 1000)
+    val hours = (ms % (24 * 3600 * 1000)) / (3600 * 1000)
+    val minutes = (ms % (3600 * 1000)) / (60 * 1000)
+    val seconds = (ms % (60 * 1000)) / 1000
+
+    return if (days > 0) {
+        "$days يوم و $hours ساعة"
+    } else {
+        String.format("%02d:%02d:%02d", hours, minutes, seconds)
     }
 }

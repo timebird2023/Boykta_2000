@@ -10,5 +10,6 @@ sealed class Screen(val route: String) {
     object WalkWin        : Screen("walk_win")
     object Settings       : Screen("settings")
     object Mgm            : Screen("mgm")
+    object Migration      : Screen("migration")
     object PrivacyPolicy  : Screen("privacy_policy")
 }

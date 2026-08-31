@@ -1,65 +1,38 @@
 package com.boykta.net.data.models
 
 import com.google.gson.annotations.SerializedName
+import java.util.Locale
 
-// ── Auth ─────────────────────────────────────────────────────────────────────
-
-/**
- * JSON body for POST /oauth2/registration.
- * Confirmed from Python bots: always sent alongside the query params.
- */
-data class OtpRegistrationBody(
-    @SerializedName("consent-agreement") val consentAgreement: List<ConsentAgreementItem> = listOf(
-        ConsentAgreementItem()
-    ),
-    @SerializedName("is-consent") val isConsent: Boolean = true
+// ── Generic API wrapper ───────────────────────────────────────────────────────
+data class ApiResponse<T>(
+    @SerializedName("status")  val status: String?,
+    @SerializedName("data")    val data: T?,
+    @SerializedName("message") val message: Any?
 )
 
-data class ConsentAgreementItem(
+// ── Auth ─────────────────────────────────────────────────────────────────────
+data class OtpRegistrationBody(
+    @SerializedName("consent-agreement") val consentAgreement: List<ConsentAgreement> = listOf(ConsentAgreement()),
+    @SerializedName("is-consent")        val isConsent: Boolean = true
+)
+
+data class ConsentAgreement(
     @SerializedName("marketing-notifications") val marketingNotifications: Boolean = false
 )
 
 data class TokenResponse(
     @SerializedName("access_token")  val accessToken: String?,
     @SerializedName("refresh_token") val refreshToken: String?,
-    @SerializedName("expires_in")    val expiresIn: Long?
+    @SerializedName("token_type")    val tokenType: String?,
+    @SerializedName("expires_in")    val expiresIn: Long?,
+    @SerializedName("scope")         val scope: String?
 )
 
-// ── Generic API wrapper ───────────────────────────────────────────────────────
-
-data class ApiMessage(
-    @SerializedName("ar") val ar: String?,
-    @SerializedName("fr") val fr: String?
-)
-
-data class ApiResponse<T>(
-    @SerializedName("status")  val status: Int?,
-    @SerializedName("message") val message: Any?,
-    @SerializedName("data")    val data: T?
-)
-
-// ── Balance ───────────────────────────────────────────────────────────────────
-
+// ── Balance & Products ────────────────────────────────────────────────────────
 data class MainBalanceData(
-    @SerializedName("mainBalance")            val mainBalance: Double?,
-    @SerializedName("customerInformations")   val customerInfo: CustomerInfo?
+    @SerializedName("mainBalance") val mainBalance: Double?
 )
 
-data class CustomerInfo(
-    @SerializedName("firstName") val firstName: String?,
-    @SerializedName("lastName")  val lastName: String?,
-    @SerializedName("msisdn")    val msisdn: String?
-)
-
-// ── Connected Products (real structure confirmed from Python analysis) ─────────
-//
-// API returns: { "data": { "products": [ { "commercialName": {ar, fr},
-//                                          "expiryAt": "...",
-//                                          "balances": [ { "remaining": N, "usageUnit": "MB" } ]
-//                                        } ] } }
-// The old flat model was wrong — it matched nothing in the real response.
-
-/** Wrapper: data field of connected-products-balances response */
 data class ConnectedProductsData(
     @SerializedName("products") val products: List<ProductBalance>?
 )
@@ -71,24 +44,24 @@ data class ProductBalance(
 )
 
 data class BalanceItem(
+    @SerializedName("usageUnit")  val usageUnit: String?,
     @SerializedName("remaining")  val remaining: Double?,
-    @SerializedName("usageUnit")  val usageUnit: String?   // "MB", "GB", "Voice", etc.
+    @SerializedName("initial")    val initial: Double?
 ) {
-    /** Human-readable remaining with Western (Locale.US) digits, e.g. "2.00 GB" or "512 MB" */
     fun displayRemaining(): String {
         val rem = remaining ?: return "--"
-        return when {
-            usageUnit == "MB" && rem > 1024 ->
-                String.format(java.util.Locale.US, "%.2f", rem / 1024) + " GB"
-            else ->
-                String.format(java.util.Locale.US, "%.0f", rem) + " ${usageUnit ?: ""}"
+        return if (usageUnit == "MB" && rem > 1024) {
+            String.format(Locale.US, "%.2f GB", rem / 1024.0)
+        } else {
+            String.format(Locale.US, "%.0f", rem) + " ${usageUnit ?: ""}"
         }
     }
 }
 
 data class CommercialName(
     @SerializedName("ar") val ar: String?,
-    @SerializedName("fr") val fr: String?
+    @SerializedName("fr") val fr: String?,
+    @SerializedName("en") val en: String? = null
 )
 
 data class SubscriptionHistoryItem(
@@ -99,7 +72,6 @@ data class SubscriptionHistoryItem(
 )
 
 // ── Flexy ─────────────────────────────────────────────────────────────────────
-
 data class FlexyHistoryItem(
     @SerializedName("msisdnBParty") val msisdnBParty: String?,
     @SerializedName("amount")       val amount: Any?,
@@ -108,13 +80,11 @@ data class FlexyHistoryItem(
 )
 
 // ── Offers ────────────────────────────────────────────────────────────────────
-
 data class ActivateProductRequest(
     @SerializedName("packageCode") val packageCode: String
 )
 
 // ── Flexy requests ────────────────────────────────────────────────────────────
-
 data class FlexyTransferRequest(
     @SerializedName("msisdnBParty") val msisdnBParty: Long,
     @SerializedName("amount")       val amount: Double,
@@ -127,7 +97,6 @@ data class FlexyDataRequest(
 )
 
 // ── Free SMS ──────────────────────────────────────────────────────────────────
-
 data class BipSmsRequest(
     @SerializedName("msisdnReceiver") val msisdnReceiver: Long,
     @SerializedName("type")           val type: String    // "CALLME" | "FLEXYLI"
@@ -139,12 +108,10 @@ data class BipSmsBalanceData(
 )
 
 // ── MGM ───────────────────────────────────────────────────────────────────────
-
 data class MgmInviteRequest(
     @SerializedName("msisdnReceiver") val msisdnReceiver: Long
 )
 
-/** Wrapper for GET /api/v1/services/mgm/invitations/{msisdn} response data */
 data class MgmInvitationsData(
     @SerializedName("invitations") val invitations: List<MgmInvitationServerItem>?
 )
@@ -152,36 +119,41 @@ data class MgmInvitationsData(
 data class MgmInvitationServerItem(
     @SerializedName("id")              val id: String?,
     @SerializedName("msisdnReceiver")  val msisdnReceiver: String?,
-    @SerializedName("status")          val status: String?,   // "DONE", "PENDING", etc.
+    @SerializedName("status")          val status: String?,
     @SerializedName("smsSendAt")       val smsSendAt: String?,
     @SerializedName("createdAt")       val createdAt: String?
 )
 
-// ── Network Services ─────────────────────────────────────────────────────────
-//
-// GET /api/v1/services/network-services/{msisdn} returns:
-//   { "data": [ {"id": "APPELMASQUE", "isActive": false}, {"id": "CALLWAIT", "isActive": true} ] }
-// POST body confirmed: {"code":"APPELMASQUE","activate":bool}
+// ── SIM Migration (تحويل نوع الشريحة) ─────────────────────────────────────────
+data class MigrationOptionItem(
+    @SerializedName("id")                   val id: String?,
+    @SerializedName("subscriptionTypeFrom") val subscriptionTypeFrom: SubscriptionTypeRef?,
+    @SerializedName("subscriptionTypeTo")   val subscriptionTypeTo: SubscriptionTypeRef?,
+    @SerializedName("description")          val description: CommercialName?,
+    @SerializedName("fee")                  val fee: Double?
+)
 
+data class SubscriptionTypeRef(
+    @SerializedName("id")   val id: String?,
+    @SerializedName("name") val name: CommercialName?
+)
+
+data class MigrationExecuteRequest(
+    @SerializedName("migrationConfigurationId") val migrationConfigurationId: String
+)
+
+// ── Network Services ─────────────────────────────────────────────────────────
 data class NetworkServiceRequest(
     @SerializedName("code")     val code: String,
     @SerializedName("activate") val activate: Boolean
 )
 
 data class NetworkServiceItem(
-    @SerializedName("id")       val id: String?,       // "APPELMASQUE" | "CALLWAIT"
-    @SerializedName("isActive") val isActive: Boolean? // true = active, false = inactive
+    @SerializedName("id")       val id: String?,
+    @SerializedName("isActive") val isActive: Boolean?
 )
 
 // ── Ranati (RBT ring-back tone) ───────────────────────────────────────────────
-//
-// GET content/api/v1/subscribers/{msisdn}?include=rbt-subscriptions
-// Response path: data.relationships.rbt-subscriptions.data
-//   []                           → not subscribed
-//   [{"id":"...","type":"..."}]  → subscribed
-//
-// Python confirmed (boykta.py): rbt_data = r1['json']['data']['relationships']['rbt-subscriptions']['data']
-
 data class RanatiSubscriberData(
     @SerializedName("type")          val type: String?,
     @SerializedName("id")            val id: String?,
@@ -201,7 +173,6 @@ data class RbtSubscriptionItem(
     @SerializedName("type") val type: String?
 )
 
-// DELETE body (confirmed from Python)
 data class RanatiDeleteBody(
     @SerializedName("data") val data: RanatiDeleteData
 )
@@ -211,7 +182,6 @@ data class RanatiDeleteData(
     @SerializedName("id")   val id: String
 )
 
-// POST body for activating Ranati (JSON:API relationship creation)
 data class RanatiActivateBody(
     @SerializedName("data") val data: List<RanatiActivateItem>
 )
@@ -222,7 +192,6 @@ data class RanatiActivateItem(
 )
 
 // ── Local model for Offers screen ────────────────────────────────────────────
-
 data class PaidOffer(
     val id: String,
     val name: String,
@@ -247,6 +216,5 @@ val PAID_OFFERS = listOf(
     PaidOffer("11", "عرض 1500دج 60Go",   "60 جيجابايت",  "1500", "شهر",     "DOVINTSPEEDMONTH30GoPRE",    "activate-product"),
     PaidOffer("12", "عرض 2000دج 100Go",  "100 جيجابايت", "2000", "30 يوم",  "DOVINTSPEEDMONTH100GoPRE5G", "activate-product"),
     PaidOffer("13", "عرض 4000دج 200Go",  "200 جيجابايت", "4000", "30 يوم",  "DOVINTSPEEDMONTH220GoPRE5G", "activate-product"),
-    // ── من boykta.py ─────────────────────────────────────────────────────────
-    PaidOffer("14", "عرض 90دج 5Go",     "5 جيجابايت",   "90",   "24 ساعة", "BTL500MBDAY",                "shake")
+    PaidOffer("14", "عرض 90دج 5Go",      "5 جيجابايت",   "90",   "24 ساعة", "BTL500MBDAY",                "shake")
 )

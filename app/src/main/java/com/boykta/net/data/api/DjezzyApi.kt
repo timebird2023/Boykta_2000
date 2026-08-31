@@ -6,27 +6,15 @@ import retrofit2.http.*
 
 interface DjezzyApi {
 
-    // ── Auth ─────────────────────────────────────────────────────────────────
-
-    /**
-     * Step 1 — request OTP.
-     * IMPORTANT: msisdn/client_id/scope are QUERY PARAMS (not form-encoded body).
-     * The JSON body is the consent agreement — always send it.
-     * Confirmed from Python bots: params={msisdn, client_id, scope}, json=body.
-     */
+    // ── Auth ──────────────────────────────────────────────────────────────────
     @POST("oauth2/registration")
     suspend fun requestOtp(
         @Query("msisdn")    msisdn: String,
         @Query("client_id") clientId: String,
         @Query("scope")     scope: String,
         @Body body: OtpRegistrationBody
-    ): Response<Void>
+    ): Response<ApiResponse<Any>>
 
-    /**
-     * Step 2 — verify OTP and get access_token.
-     * IMPORTANT: field name is 'mobileNumber' (not 'msisdn'), and scope='djezzyAppV2'.
-     * Confirmed from Python: payload has mobileNumber + scope + client_id + client_secret + grant_type.
-     */
     @FormUrlEncoded
     @POST("oauth2/token")
     suspend fun verifyOtp(
@@ -38,10 +26,6 @@ interface DjezzyApi {
         @Field("grant_type")    grantType: String
     ): Response<TokenResponse>
 
-    /**
-     * Refresh an expired access_token using the stored refresh_token.
-     * Confirmed from Python: grant_type=refresh_token, same endpoint as verifyOtp.
-     */
     @FormUrlEncoded
     @POST("oauth2/token")
     suspend fun refreshToken(
@@ -53,17 +37,12 @@ interface DjezzyApi {
     ): Response<TokenResponse>
 
     // ── Balance ───────────────────────────────────────────────────────────────
-
     @GET("api/v1/subscribers/main-balance/{msisdn}")
     suspend fun getMainBalance(
         @Header("Authorization") auth: String,
         @Path("msisdn") msisdn: String
     ): Response<ApiResponse<MainBalanceData>>
 
-    /**
-     * Returns nested: { data: { products: [ { commercialName, expiryAt, balances: [] } ] } }
-     * Old model (flat List<ProductBalance>) was wrong — use ConnectedProductsData wrapper.
-     */
     @GET("api/v1/subscribers/connected-products-balances/{msisdn}")
     suspend fun getProductBalances(
         @Header("Authorization") auth: String,
@@ -77,7 +56,6 @@ interface DjezzyApi {
     ): Response<ApiResponse<List<SubscriptionHistoryItem>>>
 
     // ── Activate offer ────────────────────────────────────────────────────────
-
     @POST("api/v1/subscribers/activate-product/{msisdn}")
     suspend fun activateProduct(
         @Header("Authorization") auth: String,
@@ -85,7 +63,6 @@ interface DjezzyApi {
         @Body body: ActivateProductRequest
     ): Response<ApiResponse<Any>>
 
-    /** Shake-type offers: GET to verify offer is available (data.code == packageCode), then POST. */
     @GET("api/v1/services/shake/{msisdn}")
     suspend fun checkShake(
         @Header("Authorization") auth: String,
@@ -99,8 +76,22 @@ interface DjezzyApi {
         @Body body: ActivateProductRequest
     ): Response<ApiResponse<Any>>
 
-    // ── Flexy ─────────────────────────────────────────────────────────────────
+    // ── SIM Migration (تحويل نوع الشريحة) ─────────────────────────────────────
+    @GET("api/v1/customer-care/migrations/{msisdn}")
+    suspend fun getMigrationOptions(
+        @Header("Authorization") auth: String,
+        @Path("msisdn") msisdn: String,
+        @Query("application") application: String = "MOBILEAPP"
+    ): Response<ApiResponse<List<MigrationOptionItem>>>
 
+    @POST("api/v1/customer-care/migrates/{msisdn}")
+    suspend fun executeMigration(
+        @Header("Authorization") auth: String,
+        @Path("msisdn") msisdn: String,
+        @Body body: MigrationExecuteRequest
+    ): Response<ApiResponse<Any>>
+
+    // ── Flexy ─────────────────────────────────────────────────────────────────
     @POST("api/v1/services/flexy/credit/{msisdn}")
     suspend fun transferCredit(
         @Header("Authorization") auth: String,
@@ -123,7 +114,6 @@ interface DjezzyApi {
     ): Response<ApiResponse<Any>>
 
     // ── Free SMS ──────────────────────────────────────────────────────────────
-
     @POST("api/v1/customer-care/bip-sms/{msisdn}")
     suspend fun sendBipSms(
         @Header("Authorization") auth: String,
@@ -131,7 +121,6 @@ interface DjezzyApi {
         @Body body: BipSmsRequest
     ): Response<ApiResponse<Any>>
 
-    /** Check remaining free bip-sms quota (callMeRemaining, flexyLiRemaining). */
     @GET("api/v1/customer-care/bip-sms/{msisdn}")
     suspend fun getBipSmsBalance(
         @Header("Authorization") auth: String,
@@ -139,7 +128,6 @@ interface DjezzyApi {
     ): Response<ApiResponse<BipSmsBalanceData>>
 
     // ── MGM ───────────────────────────────────────────────────────────────────
-
     @POST("api/v1/services/mgm/send-invitation/{msisdn}")
     suspend fun sendMgmInvitation(
         @Header("Authorization") auth: String,
@@ -160,10 +148,6 @@ interface DjezzyApi {
     ): Response<ApiResponse<Any>>
 
     // ── Network Services ─────────────────────────────────────────────────────
-    // Confirmed from Reqable recordings:
-    //   GET  api/v1/services/network-services/{msisdn}  → current states
-    //   POST api/v1/services/network-services/{msisdn}  → body {"code":"APPELMASQUE","activate":bool}
-
     @GET("api/v1/services/network-services/{msisdn}")
     suspend fun getNetworkServices(
         @Header("Authorization") auth: String,
@@ -177,11 +161,7 @@ interface DjezzyApi {
         @Body body: NetworkServiceRequest
     ): Response<ApiResponse<Any>>
 
-    // ── Ranati / RBT ring-back tone ───────────────────────────────────────────
-    // GET  → data.relationships.rbt-subscriptions.data ([] = off, [...] = on)
-    // POST → create subscription (JSON:API relationship add)
-    // DELETE → remove subscription (confirmed from Python bot)
-
+    // ── Ranati / RBT ──────────────────────────────────────────────────────────
     @GET("content/api/v1/subscribers/{msisdn}")
     suspend fun checkRanatiSubscription(
         @Header("Authorization") auth: String,
@@ -204,7 +184,6 @@ interface DjezzyApi {
     ): Response<ApiResponse<Any>>
 
     // ── Walk & Win ────────────────────────────────────────────────────────────
-
     @GET("api/v1/services/walk/campaign/{msisdn}")
     suspend fun checkWalkCampaign(
         @Header("Authorization") auth: String,

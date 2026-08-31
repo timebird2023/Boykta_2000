@@ -4,17 +4,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
-// ── Brand palette — extracted from boykta net neon logo ──────────────────────
-val Primary      = Color(0xFF00D4FF)  // electric cyan  (BN letters glow)
-val PrimaryDark  = Color(0xFF00A3CC)  // deeper cyan for light surfaces
-val OnPrimary    = Color(0xFF000000)  // black text on cyan buttons
-val Accent       = Color(0xFFFF1744)  // red neon ring arc
-val NeonBlue     = Color(0xFF0D6EFD)  // electric blue (circuit board lines)
-val Success      = Color(0xFF00E676)  // neon green
-val Error        = Color(0xFFFF1744)  // same red as accent
-val Warning      = Color(0xFFFFAB00)  // amber
+// ── Brand Palette — Direct match to boykta net Neon Bot & Ring Logo ──────────
+val Primary        = Color(0xFF00E5FF)  // Electric Neon Cyan glow (Center BN & Bot)
+val PrimaryDark    = Color(0xFF008BB8)  // Saturated Cyan for light surfaces / deep accents
+val OnPrimary      = Color(0xFF001420)  // Deepest Navy text on Neon Cyan buttons
+val Accent         = Color(0xFFFF2A54)  // Outer Neon Red / Crimson Ring Glow
+val AccentRed      = Color(0xFFFF1744)  // Vivid Crimson
+val NeonBlue       = Color(0xFF1E88E5)  // Cyber Circuit Blue
+val Success        = Color(0xFF00E676)  // Flexy Neon Green Glow
+val Error          = Color(0xFFFF2A54)  // Neon Red Alert
+val Warning        = Color(0xFFFFB300)  // Vivid Gold / Amber
 
-// ── AppColors holder ──────────────────────────────────────────────────────────
+// ── AppColors Design Token Container ─────────────────────────────────────────
 data class AppColors(
     val background: Color,
     val surface: Color,
@@ -27,36 +28,36 @@ data class AppColors(
     val isDark: Boolean
 )
 
-// ── DARK theme — matches the icon's deep navy-black canvas with neon glow ─────
+// ── DARK Theme — Deep Space / Cyber Navy Canvas with Neon Highlights ────────
 val DarkAppColors = AppColors(
-    background     = Color(0xFF05091A),  // deep navy-black (icon outer field)
-    surface        = Color(0xFF080E22),  // slightly lighter navy
-    surfaceVariant = Color(0xFF0D1530),  // card variant
-    cardBg         = Color(0xFF0A1228),  // cards
-    border         = Color(0xFF162040),  // subtle navy border with blue tint
-    textPrimary    = Color(0xFFECF4FF),  // almost white with cool blue tint
-    textSecondary  = Color(0xFF7BBFDA),  // muted cyan-grey
-    textHint       = Color(0xFF2C4060),  // dim navy hint
+    background     = Color(0xFF070B14),  // Deep space midnight
+    surface        = Color(0xFF0E1424),  // Dark cyber slate surface
+    surfaceVariant = Color(0xFF141C30),  // Elevated container
+    cardBg         = Color(0xFF0F172B),  // High-tech card background
+    border         = Color(0xFF1E2B47),  // Crisp cyber blue border
+    textPrimary    = Color(0xFFF0F6FF),  // Brilliant ice-white
+    textSecondary  = Color(0xFF86A0C8),  // Luminous slate cyan
+    textHint       = Color(0xFF435B80),  // Subdued navy hint
     isDark         = true
 )
 
-// ── LIGHT theme — vivid arctic palette: deep navy text, stronger cyan/red contrast ──
+// ── LIGHT Theme — Modern High-Contrast Ice & Slate with Vivid Neon Accents ───
 val LightAppColors = AppColors(
-    background     = Color(0xFFE8F2FF),  // crisp ice-blue canvas (more saturated)
-    surface        = Color(0xFFFFFFFF),
-    surfaceVariant = Color(0xFFD0E6FF),  // deeper cyan tint for cards & rows
-    cardBg         = Color(0xFFFFFFFF),
-    border         = Color(0xFF7AAFD4),  // stronger cyan border — clearly visible
-    textPrimary    = Color(0xFF040C1E),  // near-black navy — max contrast
-    textSecondary  = Color(0xFF1A4060),  // deep slate-cyan — readable subtitle
-    textHint       = Color(0xFF6890AA),  // medium-blue hint — not washed out
+    background     = Color(0xFFF2F6FC),  // Crisp ultra-clean canvas
+    surface        = Color(0xFFFFFFFF),  // Pure white card
+    surfaceVariant = Color(0xFFE5EEF8),  // Soft cool-blue container
+    cardBg         = Color(0xFFFFFFFF),  // Pure white
+    border         = Color(0xFFC4D6EB),  // Clear contrast divider
+    textPrimary    = Color(0xFF0A1326),  // Deep near-black navy for perfect readability
+    textSecondary  = Color(0xFF324D6D),  // Deep slate navy
+    textHint       = Color(0xFF6B87A8),  // Visible secondary hint
     isDark         = false
 )
 
-// ── CompositionLocal ──────────────────────────────────────────────────────────
+// ── CompositionLocal Accessor ────────────────────────────────────────────────
 val LocalAppColors = staticCompositionLocalOf { DarkAppColors }
 
-// ── @Composable color accessors ───────────────────────────────────────────────
+// ── Convenient @Composable Accessors ─────────────────────────────────────────
 val Background: Color    @Composable get() = LocalAppColors.current.background
 val Surface: Color       @Composable get() = LocalAppColors.current.surface
 val SurfaceVariant: Color @Composable get() = LocalAppColors.current.surfaceVariant

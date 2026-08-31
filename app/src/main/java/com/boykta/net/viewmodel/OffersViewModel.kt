@@ -39,10 +39,11 @@ class OffersViewModel(application: Application) : AndroidViewModel(application) 
             }
 
             val auth = "Bearer $token"
+
             try {
                 val response = when (offer.activationType) {
                     "shake" -> activateShakeWithRetry(auth, msisdn, offer)
-                    else    -> api.activateProduct(auth, msisdn, ActivateProductRequest(offer.packageCode))
+                    else    -> activateProductWithRetry(auth, msisdn, offer)
                 } ?: run {
                     _activationState.value = OfferActivationState.Error("انتهت صلاحية الجلسة. سجّل دخولك مجدداً.")
                     return@launch
@@ -60,22 +61,20 @@ class OffersViewModel(application: Application) : AndroidViewModel(application) 
                     else -> {
                         val ar = extractArabicMessage(response.errorBody()?.string() ?: "")
                         _activationState.value = OfferActivationState.Error(
-                            ar.ifBlank { "فشل التفعيل (${response.code()}). حاول مرة أخرى." }
+                            ar.ifBlank { "فشل التفعيل (${response.code()}). يرجى التأكد من توفر الرصيد والمحاولة ثانية." }
                         )
                     }
                 }
             } catch (e: Exception) {
-                _activationState.value = OfferActivationState.Error("تعذّر الاتصال بالخادم.")
+                _activationState.value = OfferActivationState.Error("تعذّر الاتصال بالخادم. تأكد من اتصال الإنترنت.")
             }
         }
     }
 
     /**
-     * Shake offer activation with retry — mirrors the Python bot logic exactly:
-     *  1. GET /shake/{msisdn} → retry up to 10 times until data.code == packageCode
-     *  2. POST /shake/{msisdn} with packageCode → retry up to 10 times on any error except 402
-     *
-     * Returns null only if the session has expired (401 from OkHttp Authenticator).
+     * Resilient Shake offer activation:
+     * 1. GET /shake/{msisdn} → retry until packageCode appears or loop limit.
+     * 2. POST /shake/{msisdn} → retry on transient errors (429, 500, etc.) until 200/201 or 402.
      */
     private suspend fun activateShakeWithRetry(
         auth: String,
@@ -83,18 +82,17 @@ class OffersViewModel(application: Application) : AndroidViewModel(application) 
         offer: PaidOffer
     ): retrofit2.Response<ApiResponse<Any>>? {
         val pkgCode = offer.packageCode
-        val maxAttempts = 10
+        val maxAttempts = 12
 
-        // ── Step 1: GET until data.code == packageCode ──────────────────────
+        // ── Step 1: GET check ────────────────────────────────────────────────
         var found = false
         var getAttempts = 0
         while (!found && getAttempts < maxAttempts) {
             getAttempts++
             try {
                 val r = api.checkShake(auth, msisdn)
-                if (r.code() == 401) return null   // session expired
+                if (r.code() == 401) return null
                 if (r.isSuccessful) {
-                    // Parse the nested JSON to check data.code
                     val body = r.body()
                     @Suppress("UNCHECKED_CAST")
                     val dataMap = body?.data as? Map<*, *>
@@ -104,32 +102,51 @@ class OffersViewModel(application: Application) : AndroidViewModel(application) 
                     }
                 }
             } catch (_: Exception) { }
-            delay(200)
+            delay(150)
         }
 
-        // If GET never found the offer, still proceed to POST
-        // (the offer may appear after the POST triggers server-side allocation)
-
-        // ── Step 2: POST until success or 402 ───────────────────────────────
+        // ── Step 2: POST execution ───────────────────────────────────────────
         var postAttempts = 0
         while (postAttempts < maxAttempts) {
             postAttempts++
             try {
-                delay(200)
                 val r = api.activateShake(auth, msisdn, ActivateProductRequest(pkgCode))
-                if (r.code() == 401) return null      // session expired
-                if (r.code() == 402) return r          // insufficient balance — stop
-                if (r.isSuccessful || r.code() in 200..202) return r  // success
-                // Any other error → retry
+                if (r.code() == 401) return null
+                if (r.code() == 402) return r // Stop immediately if balance is insufficient
+                if (r.isSuccessful || r.code() in 200..202) return r
             } catch (_: Exception) { }
-            delay(200)
+            delay(150)
         }
 
-        // Exhausted retries — return last attempt result (fall through to caller)
         return api.activateShake(auth, msisdn, ActivateProductRequest(pkgCode))
     }
 
-    /** Extract the Arabic message from error JSON: {"message":{"ar":"..."}} */
+    /**
+     * Standard Product Activation with transient retry:
+     */
+    private suspend fun activateProductWithRetry(
+        auth: String,
+        msisdn: String,
+        offer: PaidOffer
+    ): retrofit2.Response<ApiResponse<Any>>? {
+        val pkgCode = offer.packageCode
+        val maxAttempts = 6
+        var attempts = 0
+
+        while (attempts < maxAttempts) {
+            attempts++
+            try {
+                val r = api.activateProduct(auth, msisdn, ActivateProductRequest(pkgCode))
+                if (r.code() == 401) return null
+                if (r.code() == 402) return r
+                if (r.isSuccessful || r.code() in 200..202) return r
+            } catch (_: Exception) { }
+            delay(150)
+        }
+
+        return api.activateProduct(auth, msisdn, ActivateProductRequest(pkgCode))
+    }
+
     private fun extractArabicMessage(json: String): String {
         return try {
             Regex(""""ar"\s*:\s*"([^"]+)"""").find(json)?.groupValues?.get(1) ?: ""
