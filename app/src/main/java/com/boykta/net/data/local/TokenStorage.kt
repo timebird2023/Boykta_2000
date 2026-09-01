@@ -40,7 +40,6 @@ class TokenStorage(private val context: Context) {
         private val KEY_DARK_THEME     = booleanPreferencesKey("dark_theme")
 
         const val MAX_ACCOUNTS = 5
-
         private val gson = Gson()
     }
 
@@ -82,7 +81,7 @@ class TokenStorage(private val context: Context) {
         } catch (e: Exception) { emptyList() }
     }
 
-    /** Save or update an account (upsert by msisdn). Enforces max 5. */
+    /** Save or update an account in the multi-account list, and make it active. */
     suspend fun saveAccount(
         accessToken: String,
         msisdn: String,
@@ -105,14 +104,12 @@ class TokenStorage(private val context: Context) {
             accounts[idx] = newAccount
         } else {
             if (accounts.size >= MAX_ACCOUNTS) {
-                // Remove the oldest account to make room
                 accounts.removeAt(0)
             }
             accounts.add(newAccount)
         }
         context.dataStore.edit { prefs ->
             prefs[KEY_ACCOUNTS_JSON] = gson.toJson(accounts)
-            // Also activate this account immediately
             prefs[KEY_ACCESS_TOKEN]  = accessToken
             prefs[KEY_MSISDN]        = msisdn
             prefs[KEY_PHONE_DISPLAY] = phoneDisplay
@@ -160,7 +157,6 @@ class TokenStorage(private val context: Context) {
                 prefs.remove(KEY_PHONE_DISPLAY)
                 prefs.remove(KEY_ACCOUNT_NAME)
                 prefs.remove(KEY_TOKEN_EXPIRY)
-                // Switch to the first remaining account if any
                 accounts.firstOrNull()?.let { first ->
                     prefs[KEY_ACCESS_TOKEN]  = first.accessToken
                     prefs[KEY_MSISDN]        = first.msisdn
@@ -179,7 +175,6 @@ class TokenStorage(private val context: Context) {
             prefs[KEY_ACCESS_TOKEN] = newAccessToken
             prefs[KEY_TOKEN_EXPIRY] = System.currentTimeMillis() + 3600L * 1000
             if (newRefreshToken != null) prefs[KEY_REFRESH_TOKEN] = newRefreshToken
-            // Also update the token inside accountsJson
             val msisdn = prefs[KEY_MSISDN] ?: return@edit
             val json   = prefs[KEY_ACCOUNTS_JSON] ?: return@edit
             val type   = object : TypeToken<List<SavedAccount>>() {}.type
@@ -208,13 +203,14 @@ class TokenStorage(private val context: Context) {
         }
     }
 
-    /** Returns true if a token exists and has not expired. */
+    /** Returns true if a valid session exists (either valid access token OR refresh token). */
     suspend fun isTokenValid(): Boolean {
         return try {
             val prefs  = context.dataStore.data.catch { emit(emptyPreferences()) }.first()
             val token  = prefs[KEY_ACCESS_TOKEN]
+            val refreshToken = prefs[KEY_REFRESH_TOKEN]
             val expiry = prefs[KEY_TOKEN_EXPIRY] ?: 0L
-            !token.isNullOrBlank() && System.currentTimeMillis() < expiry
+            (!token.isNullOrBlank() && System.currentTimeMillis() < expiry) || !refreshToken.isNullOrBlank()
         } catch (e: Exception) { false }
     }
 
