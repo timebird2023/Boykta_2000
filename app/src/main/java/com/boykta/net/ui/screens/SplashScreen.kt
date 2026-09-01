@@ -18,14 +18,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.boykta.net.R
-import com.boykta.net.data.api.ApiClient
 import com.boykta.net.data.local.TokenStorage
 import com.boykta.net.navigation.Screen
 import com.boykta.net.ui.theme.*
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.withContext
 
 @Composable
 fun SplashScreen(navController: NavController) {
@@ -39,36 +36,24 @@ fun SplashScreen(navController: NavController) {
     )
 
     LaunchedEffect(Unit) {
-        delay(900)
-
+        delay(800)
         val isValidLocally = tokenStorage.isTokenValid()
         if (isValidLocally) {
             val token = tokenStorage.accessToken.firstOrNull() ?: ""
+            val refreshToken = tokenStorage.refreshToken.firstOrNull() ?: ""
             val msisdn = tokenStorage.msisdn.firstOrNull() ?: ""
 
-            if (token.isNotBlank() && msisdn.isNotBlank()) {
-                // Perform live verification with Djezzy API (handled with OkHttp Authenticator)
-                val isServerLive = withContext(Dispatchers.IO) {
-                    try {
-                        val response = ApiClient.api.getMainBalance("Bearer $token", msisdn)
-                        response.isSuccessful || response.code() in 200..202
-                    } catch (_: Exception) {
-                        // In case of offline or intermittent network, trust local valid session
-                        true
-                    }
+            if (msisdn.isNotBlank() && (token.isNotBlank() || refreshToken.isNotBlank())) {
+                // Persistent session: Trust local session and let ApiClient auto-refresh in background.
+                // Never kick the user to login screen due to weak internet during splash!
+                navController.navigate(Screen.Dashboard.route) {
+                    popUpTo(Screen.Splash.route) { inclusive = true }
                 }
-
-                if (isServerLive) {
-                    navController.navigate(Screen.Dashboard.route) {
-                        popUpTo(Screen.Splash.route) { inclusive = true }
-                    }
-                    return@LaunchedEffect
-                }
+                return@LaunchedEffect
             }
         }
 
-        // Clean up expired session silently and navigate to Auth
-        try { tokenStorage.clearToken() } catch (_: Exception) {}
+        // Navigate to Auth screen only if user has never logged in or explicitly logged out
         navController.navigate(Screen.Auth.route) {
             popUpTo(Screen.Splash.route) { inclusive = true }
         }
@@ -91,18 +76,14 @@ fun SplashScreen(navController: NavController) {
                     .size(130.dp)
                     .clip(CircleShape)
             )
-
             Spacer(Modifier.height(24.dp))
-
             Text(
                 text = "boykta net",
                 style = MaterialTheme.typography.displayMedium,
                 fontWeight = FontWeight.Bold,
                 color = Primary
             )
-
             Spacer(Modifier.height(8.dp))
-
             Text(
                 text = "بوت خدمات جازي الذكي",
                 style = MaterialTheme.typography.bodyMedium,
