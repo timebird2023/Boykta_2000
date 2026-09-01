@@ -1,4 +1,4 @@
-name: Android CI — Build & Sign APK
+name: Android CI — Universal Release APK
 
 on:
   push:
@@ -9,9 +9,8 @@ on:
 
 jobs:
   build:
-    name: Build Ultra-Compact Universal APK
+    name: Build Universal Release APK (All Architectures)
     runs-on: ubuntu-latest
-
     steps:
       # ── 1. Checkout ──────────────────────────────────────────────────────────
       - name: Checkout repository
@@ -47,26 +46,26 @@ jobs:
           EOF
             echo "Release keystore configured."
           else
-            echo "No custom release keystore secret found. Building with standard build configuration."
+            echo "No custom release keystore secret found. Building with standard signing configuration."
           fi
 
-      # ── 5. Build minified universal APK ──────────────────────────────────────
-      - name: Build APK (Release & Debug)
-        run: ./gradlew assembleRelease assembleDebug --no-daemon --stacktrace
+      # ── 5. Build minified universal Release APK ──────────────────────────────
+      - name: Build Universal Release APK
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
 
-      # ── 6. Display APK sizes ─────────────────────────────────────────────────
+      # ── 6. Display APK details & size ────────────────────────────────────────
       - name: Display APK outputs
         run: |
-          echo "=== Generated APKs ==="
-          ls -lh app/build/outputs/apk/*/*.apk || true
+          echo "=== Universal Release APK Output ==="
+          ls -lh app/build/outputs/apk/release/*.apk || true
 
       # ── 7. Upload APK artifact ───────────────────────────────────────────────
-      - name: Upload APK
+      - name: Upload Universal Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: boykta-net-apk
-          path: app/build/outputs/apk/**/*.apk
-          retention-days: 14
+          name: BoyktaNet-Universal-AllDevices-APK
+          path: app/build/outputs/apk/release/*.apk
+          retention-days: 30
 
       # ── 8. Clean up keystore ─────────────────────────────────────────────────
       - name: Clean up keystore
