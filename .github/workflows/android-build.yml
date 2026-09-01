@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    name: Build Universal APK
+    name: Build Ultra-Compact Universal APK
     runs-on: ubuntu-latest
 
     steps:
@@ -50,11 +50,17 @@ jobs:
             echo "No custom release keystore secret found. Building with standard build configuration."
           fi
 
-      # ── 5. Build universal APK ───────────────────────────────────────────────
-      - name: Build APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+      # ── 5. Build minified universal APK ──────────────────────────────────────
+      - name: Build APK (Release & Debug)
+        run: ./gradlew assembleRelease assembleDebug --no-daemon --stacktrace
 
-      # ── 6. Upload APK artifact ───────────────────────────────────────────────
+      # ── 6. Display APK sizes ─────────────────────────────────────────────────
+      - name: Display APK outputs
+        run: |
+          echo "=== Generated APKs ==="
+          ls -lh app/build/outputs/apk/*/*.apk || true
+
+      # ── 7. Upload APK artifact ───────────────────────────────────────────────
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
@@ -62,7 +68,7 @@ jobs:
           path: app/build/outputs/apk/**/*.apk
           retention-days: 14
 
-      # ── 7. Clean up keystore ─────────────────────────────────────────────────
+      # ── 8. Clean up keystore ─────────────────────────────────────────────────
       - name: Clean up keystore
         if: always()
         run: |
