@@ -5,6 +5,7 @@ import com.boykta.net.BuildConfig
 import com.boykta.net.data.local.TokenStorage
 import com.boykta.net.data.models.TokenResponse
 import com.google.gson.Gson
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.runBlocking
 import okhttp3.Authenticator
@@ -20,7 +21,6 @@ import java.util.concurrent.TimeUnit
 object ApiClient {
 
     private const val BASE_URL = "https://apim.djezzy.dz/mobile-api/"
-
     const val CLIENT_ID     = "87pIExRhxBb3_wGsA5eSEfyATloa"
     const val CLIENT_SECRET = "uf82p68Bgisp8Yg1Uz8Pf6_v1XYa"
     const val GRANT_TYPE    = "mobile"
@@ -37,51 +37,76 @@ object ApiClient {
     /**
      * OkHttp Authenticator — called automatically on 401 responses.
      * Uses the stored refresh_token to obtain a new access_token.
-     * Runs synchronously inside OkHttp's network thread (runBlocking is acceptable here).
+     * Implements intelligent retry to handle weak connections and 429 rate limits without killing session.
      */
     private val tokenRefreshAuthenticator = object : Authenticator {
         override fun authenticate(route: Route?, response: okhttp3.Response): Request? {
             // Don't retry if this is already a token endpoint request (prevents infinite loop)
             if (response.request.url.toString().contains("oauth2/token")) return null
-            // Stop after 1 refresh attempt
-            if (responseCount(response) >= 2) return null
+
+            // Stop after 3 attempts
+            if (responseCount(response) >= 3) return null
 
             val ctx = appContext ?: return null
-
             val newToken = runBlocking {
                 val storage = TokenStorage(ctx)
                 val refreshToken = storage.refreshToken.firstOrNull() ?: return@runBlocking null
-                try {
-                    val body = FormBody.Builder()
-                        .add("grant_type", "refresh_token")
-                        .add("refresh_token", refreshToken)
-                        .add("client_id", CLIENT_ID)
-                        .add("client_secret", CLIENT_SECRET)
-                        .add("scope", SCOPE_DJEZZY)
-                        .build()
-                    val req = Request.Builder()
-                        .url("${BASE_URL}oauth2/token")
-                        .post(body)
-                        .header("User-Agent", "MobileApp/3.0.7")
-                        .header("Accept", "application/json")
-                        .build()
-                    // Use a plain client (no authenticator) to avoid recursion
-                    val plainClient = OkHttpClient()
-                    val resp = plainClient.newCall(req).execute()
-                    if (resp.isSuccessful) {
-                        val json = resp.body?.string() ?: return@runBlocking null
-                        val tokenResp = Gson().fromJson(json, TokenResponse::class.java)
-                        val newAccess = tokenResp.accessToken ?: return@runBlocking null
-                        storage.updateToken(newAccess, tokenResp.refreshToken)
-                        newAccess
-                    } else {
-                        // Refresh failed — token is truly dead (e.g. bot logged in on same number).
-                        // Clear the stored token and signal the app to navigate to Auth.
-                        storage.clearToken()
-                        SessionManager.notifySessionExpired()
-                        null
+
+                var refreshedAccessToken: String? = null
+                val body = FormBody.Builder()
+                    .add("grant_type", "refresh_token")
+                    .add("refresh_token", refreshToken)
+                    .add("client_id", CLIENT_ID)
+                    .add("client_secret", CLIENT_SECRET)
+                    .add("scope", SCOPE_DJEZZY)
+                    .build()
+
+                val req = Request.Builder()
+                    .url("${BASE_URL}oauth2/token")
+                    .post(body)
+                    .header("User-Agent", "MobileApp/3.0.7")
+                    .header("Accept", "application/json")
+                    .build()
+
+                val plainClient = OkHttpClient.Builder()
+                    .connectTimeout(12, TimeUnit.SECONDS)
+                    .readTimeout(12, TimeUnit.SECONDS)
+                    .build()
+
+                // Retry up to 3 times for weak connection / 429 / 5xx
+                for (attempt in 1..3) {
+                    try {
+                        val resp = plainClient.newCall(req).execute()
+                        val code = resp.code
+                        val respBody = resp.body?.string() ?: ""
+
+                        if (resp.isSuccessful) {
+                            val tokenResp = Gson().fromJson(respBody, TokenResponse::class.java)
+                            val newAccess = tokenResp.accessToken
+                            if (!newAccess.isNullOrBlank()) {
+                                storage.updateToken(newAccess, tokenResp.refreshToken)
+                                refreshedAccessToken = newAccess
+                                break
+                            }
+                        } else if (code == 400 || (code == 401 && (respBody.contains("invalid_grant") || respBody.contains("invalid_token")))) {
+                            // Refresh token is definitely revoked/expired (user logged in elsewhere or 30 days passed)
+                            storage.clearToken()
+                            SessionManager.notifySessionExpired()
+                            return@runBlocking null
+                        } else {
+                            // 429 or 5xx temporary server error - wait a bit and retry
+                            if (attempt < 3) {
+                                delay(500L * attempt)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        // Network timeout / connection glitch - retry before giving up
+                        if (attempt < 3) {
+                            delay(500L * attempt)
+                        }
                     }
-                } catch (e: Exception) { null }
+                }
+                refreshedAccessToken
             } ?: return null
 
             return response.request.newBuilder()
@@ -110,15 +135,10 @@ object ApiClient {
                     .header("Accept",          "application/json")
                     .header("Accept-Language", "ar")
                     .header("Accept-Encoding", "gzip")
-                    // NOTE: Do NOT set Content-Type here — Retrofit sets it automatically:
-                    //   @FormUrlEncoded → application/x-www-form-urlencoded
-                    //   @Body (JSON)    → application/json
-                    // Overriding it globally breaks the OAuth form-encoded endpoints.
                     .method(original.method, original.body)
                     .build()
                 chain.proceed(request)
             }
-            // Logging only in debug builds — stripped by R8 in release
             .also { builder ->
                 if (BuildConfig.DEBUG) {
                     val logging = HttpLoggingInterceptor()
