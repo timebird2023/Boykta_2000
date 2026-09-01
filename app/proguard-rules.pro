@@ -1,6 +1,6 @@
-##############################################
+###############################################
 # boykta net — ProGuard / R8 Release Rules
-##############################################
+###############################################
 
 # Keep app entry points
 -keep class com.boykta.net.MainActivity { *; }
@@ -32,6 +32,8 @@
 # Gson / JSON models — keep field names so serialisation works
 -keepclassmembers class com.boykta.net.data.models.** { *; }
 -keep class com.boykta.net.data.models.** { *; }
+-keepclassmembers class com.boykta.net.data.model.** { *; }
+-keep class com.boykta.net.data.model.** { *; }
 -keepattributes *Annotation*
 
 # DataStore
